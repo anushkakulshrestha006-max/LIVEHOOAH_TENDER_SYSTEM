@@ -1,0 +1,4591 @@
+import logging
+import re
+import unicodedata
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger("livehooah")
+
+
+class TenderParser:
+    """
+    Production-grade tender document parser.
+
+    Responsibilities:
+    - Extract structured fields from raw tender text.
+    - Prefer high-confidence, context-aware extraction.
+    - Avoid returning obvious document noise.
+    - Preserve compatibility with the existing pipeline.
+
+    The parser is intentionally deterministic and does not depend on
+    external APIs or LLMs.
+    """
+
+    # ------------------------------------------------------------------
+    # Generic / non-descriptive headings
+    # ------------------------------------------------------------------
+
+    GENERIC_TITLE_PATTERNS = [
+        r"^request\s+for\s+proposal[s]?$",
+        r"^request\s+for\s+quotation[s]?$",
+        r"^request\s+for\s+bid[s]?$",
+        r"^request\s+for\s+expression\s+of\s+interest$",
+        r"^expression\s+of\s+interest$",
+        r"^eoi$",
+        r"^rfp$",
+        r"^rfq$",
+        r"^nit$",
+        r"^tender$",
+        r"^tender\s+document$",
+        r"^bid\s+document$",
+        r"^bid\s+invitation$",
+        r"^consultancy\s+services$",
+        r"^consultant\s+services$",
+        r"^empanelment$",
+        r"^notice\s+inviting\s+tender[s]?$",
+        r"^invitation\s+for\s+bids?$",
+        r"^invitation\s+to\s+bid$",
+        r"^request\s+for\s+selection$",
+    ]
+
+    # ------------------------------------------------------------------
+    # Title keywords
+    # ------------------------------------------------------------------
+
+    TITLE_KEYWORDS = [
+        "request for proposal",
+        "request for quotation",
+        "request for bid",
+        "expression of interest",
+        "notice inviting tender",
+        "invitation for bids",
+        "tender",
+        "consultancy",
+        "consultant",
+        "empanelment",
+        "selection",
+        "appointment",
+        "design",
+        "construction",
+        "procurement",
+        "supply",
+        "execution",
+        "maintenance",
+        "operation",
+        "engineering",
+        "architectural",
+        "structural",
+        "project management",
+        "pmc",
+        "survey",
+        "works",
+        "services",
+        "development",
+        "renovation",
+        "retrofitting",
+        "rehabilitation",
+        "proof checking",
+        "peer review",
+        "structural audit",
+        "structural assessment",
+        "structural design",
+    ]
+
+    # ------------------------------------------------------------------
+    # Description / section hints
+    # ------------------------------------------------------------------
+
+    SECTION_HINTS = [
+        "name of work",
+        "scope of work",
+        "brief scope",
+        "project description",
+        "tender description",
+        "description of work",
+    ]
+
+    DESCRIPTION_HEADERS = [
+        "scope of work",
+        "brief scope",
+        "project description",
+        "tender description",
+        "description of work",
+        "name of work",
+        "objective",
+        "background",
+        "about the project",
+    ]
+
+    # ------------------------------------------------------------------
+    # Organization keywords
+    # ------------------------------------------------------------------
+
+    ORGANIZATION_LABELS = [
+        "organization",
+        "organisation",
+        "client",
+        "department",
+        "authority",
+        "owner",
+        "issued by",
+        "employer",
+        "procuring entity",
+        "procuring authority",
+        "implementing agency",
+        "purchaser",
+        "buyer",
+    ]
+
+    # ------------------------------------------------------------------
+    # Date extraction
+    # ------------------------------------------------------------------
+
+    DATE_PATTERNS = [
+        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+        r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b",
+        r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b",
+        r"\b\d{1,2}\.[0-9]{1,2}\.\d{2,4}\b",
+    ]
+
+    DEADLINE_CONTEXT = [
+        "last date",
+        "closing date",
+        "closing time",
+        "submission",
+        "bid submission",
+        "proposal submission",
+        "offer submission",
+        "due date",
+        "deadline",
+        "last date of submission",
+        "bid due",
+        "closing",
+        "tender closing",
+        "submission deadline",
+        "last date for submission",
+        "date of closing",
+    ]
+
+    # ------------------------------------------------------------------
+    # Location extraction
+    # ------------------------------------------------------------------
+
+    INDIAN_STATES_AND_UTS = [
+        "andhra pradesh",
+        "arunachal pradesh",
+        "assam",
+        "bihar",
+        "chhattisgarh",
+        "goa",
+        "gujarat",
+        "haryana",
+        "himachal pradesh",
+        "jharkhand",
+        "karnataka",
+        "kerala",
+        "madhya pradesh",
+        "maharashtra",
+        "manipur",
+        "meghalaya",
+        "mizoram",
+        "nagaland",
+        "odisha",
+        "punjab",
+        "rajasthan",
+        "sikkim",
+        "tamil nadu",
+        "telangana",
+        "tripura",
+        "uttar pradesh",
+        "uttarakhand",
+        "west bengal",
+        "delhi",
+        "new delhi",
+        "jammu and kashmir",
+        "ladakh",
+        "andaman and nicobar",
+        "chandigarh",
+        "dadra and nagar haveli",
+        "daman and diu",
+        "lakshadweep",
+        "puducherry",
+    ]
+
+    LOCATION_LABELS = [
+        "location",
+        "place of work",
+        "work location",
+        "site",
+        "project location",
+        "district",
+        "state",
+        "city",
+        "place of execution",
+        "execution location",
+        "project site",
+    ]
+
+    # ------------------------------------------------------------------
+    # Tender type
+    # ------------------------------------------------------------------
+
+    TENDER_TYPE_MAP = {
+        "request for proposal": "RFP",
+        "rfp": "RFP",
+        "request for quotation": "RFQ",
+        "rfq": "RFQ",
+        "expression of interest": "EOI",
+        "eoi": "EOI",
+        "notice inviting tender": "NIT",
+        "nit": "NIT",
+        "empanelment": "EMPANELMENT",
+        "consultancy": "CONSULTANCY",
+        "consultant": "CONSULTANCY",
+        "auction": "AUCTION",
+        "rate contract": "RATE CONTRACT",
+        "limited tender": "LIMITED TENDER",
+        "open tender": "OPEN TENDER",
+    }
+
+    # ------------------------------------------------------------------
+    # Money extraction
+    # ------------------------------------------------------------------
+
+    MONEY_PATTERN = (
+        r"(?:₹|rs\.?|inr)\s*"
+        r"([0-9][0-9,]*(?:\.\d{1,2})?)"
+        r"(?:\s*/-)?"
+    )
+
+    # ------------------------------------------------------------------
+    # Contact extraction
+    # ------------------------------------------------------------------
+
+    EMAIL_PATTERN = re.compile(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    )
+
+    PHONE_PATTERN = re.compile(
+        r"(?<!\d)"
+        r"(?:"
+        r"\+91[\s-]?[6-9]\d{9}"
+        r"|"
+        r"0\d{2,5}[\s-]?\d{6,8}"
+        r"|"
+        r"[6-9]\d{9}"
+        r")"
+        r"(?!\d)"
+    )    
+    GOVERNMENT_KEYWORDS = (
+        "government",
+        "govt",
+        "ministry",
+        "department",
+        "directorate",
+        "authority",
+        "municipal",
+        "municipality",
+        "corporation",
+        "council",
+        "board",
+        "commission",
+        "public works",
+        "pwd",
+        "development authority",
+        "urban development authority",
+        "state government",
+        "central government",
+        "government of india",
+        "govt. of india",
+        "indian government",
+        "public sector",
+        "psu",
+        "autonomous body",
+        "institute",
+        "university",
+        "iit",
+        "nit",
+    )
+
+    # ------------------------------------------------------------------
+    # Strong, unambiguous institutional-name markers.
+    #
+    # Used only by the whole-document institution scan
+    # (`_extract_institution_name`) as a high-precision signal that a
+    # short line is very likely the issuing organization's formal
+    # name, even when it appears outside the normal document-header
+    # window (e.g. in a letterhead or a signature block).
+    # ------------------------------------------------------------------
+
+    STRONG_INSTITUTION_KEYWORDS = (
+        "indian institute of technology",
+        "national institute of technology",
+        "indian institute of management",
+        "indian institute of science",
+        "all india institute of medical sciences",
+        "aiims",
+        "central public works department",
+        "cpwd",
+        "state public works department",
+        "public works department",
+        "municipal corporation",
+        "development authority",
+        "housing board",
+        "electricity board",
+        "state government",
+        "government of india",
+        "ministry of",
+        "directorate of",
+        "institute of technology",
+        "institute of management",
+        "board of",
+        "university",
+    )
+
+    # ------------------------------------------------------------------
+    # Main Parser
+    # ------------------------------------------------------------------
+
+    def parse(self, text: str, source_url: str = "") -> Dict:
+        """
+        Parse raw tender text into a structured dictionary.
+
+        Returned keys are intentionally kept compatible with the existing
+        TenderExtractionEngine and downstream pipeline.
+
+        Args:
+            text: Raw extracted document text.
+            source_url: Optional URL the text was extracted from. Used
+                only for diagnostic logging; it does not influence
+                extraction behavior.
+        """
+
+        if not text or not isinstance(text, str):
+            return {}
+
+        diagnostics = {
+            "title_found": False,
+            "organization_found": False,
+            "deadline_found": False,
+            "emd_found": False,
+            "fee_found": False,
+            "contact_found": False,
+            "tender_type": "",
+            "expired": False,
+            "confidence": 0.0,
+            "reasons": [],
+        }
+
+        text = self._normalize_text(text)
+
+        if not text.strip():
+            diagnostics["reasons"].append(
+                "Empty text after normalization"
+            )
+            self._log_parser_diagnostics(source_url, diagnostics)
+            return {}
+
+        lines = self._prepare_lines(text)
+
+        if not lines:
+            diagnostics["reasons"].append(
+                "No usable lines after preparation"
+            )
+            self._log_parser_diagnostics(source_url, diagnostics)
+            return {}
+
+        lines = self._remove_table_of_contents(lines)
+
+        title = self._extract_title(text, lines)
+        title = self._clean_title_metadata(title)
+
+        if title:
+            diagnostics["title_found"] = True
+        else:
+            diagnostics["reasons"].append("No title detected")
+
+        organization = self._extract_organization(text, lines, title)
+
+        if organization:
+            diagnostics["organization_found"] = True
+        else:
+            diagnostics["reasons"].append("No organization detected")
+
+        deadline = self._extract_deadline(text)
+
+        if deadline:
+            diagnostics["deadline_found"] = True
+        else:
+            diagnostics["reasons"].append("No deadline detected")
+
+        location = self._extract_location(text)
+
+        description = self._extract_description(text, lines)
+
+        tender_type = self._extract_tender_type(text)
+
+        diagnostics["tender_type"] = tender_type
+
+        emd = self._extract_emd(text)
+
+        if emd:
+            diagnostics["emd_found"] = True
+
+        document_fee = self._extract_document_fee(text)
+
+        if document_fee:
+            diagnostics["fee_found"] = True
+
+        email = self._extract_email(text)
+        phone = self._extract_phone(text)
+
+        if email or phone:
+            diagnostics["contact_found"] = True
+
+        if self._is_expired(deadline):
+            diagnostics["expired"] = True
+            diagnostics["reasons"].append("Tender expired")
+
+        diagnostics["confidence"] = self._compute_confidence(diagnostics)
+
+        parsed = {
+            "title": title,
+            "organization": organization,
+            "deadline": deadline,
+            "location": location,
+            "description": description,
+            "tender_type": tender_type,
+            "emd": emd,
+            "document_fee": document_fee,
+            "email": email,
+            "phone": phone,
+        }
+
+        parsed = self._validate_parsed_result(
+            parsed,
+            text,
+            lines,
+        )
+
+        if not diagnostics["title_found"]:
+            self._log_parser_diagnostics(source_url, diagnostics)
+            return parsed
+
+        logger.info(
+            "Parser SUCCESS | "
+            "Title=%s | "
+            "Org=%s | "
+            "Deadline=%s | "
+            "Confidence=%.2f",
+            title,
+            organization,
+            deadline,
+            diagnostics["confidence"],
+        )
+
+        return parsed
+
+    # ------------------------------------------------------------------
+    # Text Normalization
+    # ------------------------------------------------------------------
+
+    def _normalize_text(self, text: str) -> str:
+        """
+        Normalize Unicode and whitespace while preserving line structure.
+        """
+
+        text = unicodedata.normalize("NFKC", text)
+
+        text = text.replace("\r\n", "\n")
+        text = text.replace("\r", "\n")
+
+        # Normalize non-breaking spaces.
+        text = text.replace("\xa0", " ")
+
+        # Normalize common Unicode dash variants.
+        text = text.replace("–", "-")
+        text = text.replace("—", "-")
+        text = text.replace("−", "-")
+
+        # Normalize whitespace without destroying line boundaries.
+        text = re.sub(r"[ \t]+", " ", text)
+
+        return text
+
+    # ------------------------------------------------------------------
+
+    def _prepare_lines(self, text: str) -> List[str]:
+        """
+        Convert raw text into cleaned logical lines.
+        """
+
+        lines = []
+
+        for line in text.split("\n"):
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            line = re.sub(r"\s+", " ", line)
+
+            if not line:
+                continue
+
+            lines.append(line)
+
+        return lines
+
+    # ------------------------------------------------------------------
+
+    def _remove_table_of_contents(
+        self,
+        lines: List[str],
+    ) -> List[str]:
+        """
+        Remove obvious table-of-contents noise.
+
+        This prevents TOC entries from being mistaken for:
+        - titles
+        - descriptions
+        - section headers
+        - project names
+        """
+
+        cleaned = []
+
+        toc_headers = {
+            "contents",
+            "table of contents",
+            "index",
+            "page no",
+            "page number",
+            "sr. no.",
+            "s. no.",
+        }
+
+        for line in lines:
+
+            lower = line.lower().strip()
+
+            # Skip obvious TOC headers.
+            if lower in toc_headers:
+                continue
+
+            # Skip entries such as:
+            # Scope of Work .......... 19
+            # Eligibility ----------- 25
+            if re.search(r"[.\-]{4,}\s*\d+\s*$", line):
+                continue
+
+            # Skip lines consisting only of page numbers.
+            if re.fullmatch(r"\d+", lower):
+                continue
+
+            cleaned.append(line)
+
+        return cleaned
+    
+    def _clean_title_metadata(
+        self,
+        title: str,
+        ) -> str:
+        """
+        Remove trailing document metadata accidentally absorbed into
+        a title candidate.
+    
+        This is intentionally conservative: only well-known metadata
+        labels that indicate the title has ended are used as boundaries.
+        """
+
+        if not title:
+            return ""
+
+        title = re.sub(
+            r"\s+",
+            " ",
+            title,
+        ).strip()
+
+        metadata_patterns = [
+            r"\blocation\s*:",
+            r"\bproject\s+location\s*:",
+            r"\bsite\s*:",
+            r"\bproject\s+site\s*:",
+            r"\blast\s+date\b",
+            r"\bdeadline\s*:",
+            r"\bclosing\s+date\b",
+            r"\bclosing\s+time\b",
+            r"\bsubmission\s+date\b",
+            r"\bdate\s+of\s+submission\b",
+            r"\bemd\s*:",
+            r"\be\.m\.d\.\s*:",
+            r"\bearnest\s+money\s+deposit\s*:",
+            r"\bdocument\s+fee\s*:",
+            r"\btender\s+fee\s*:",
+            r"\bbid\s+fee\s*:",
+            r"\bdocument\s+cost\s*:",
+            r"\bemail\s*:",
+            r"\be-mail\s*:",
+            r"\bphone\s*:",
+            r"\bmobile\s*:",
+            r"\btelephone\s*:",
+            r"\bcontact\s+details\s*:",
+        ]    
+
+        boundary_pattern = re.compile(
+            r"\s+(?:" +
+            "|".join(metadata_patterns) +
+            r")",
+            flags=re.IGNORECASE,
+        )
+
+        match = boundary_pattern.search(title)
+
+        if match:
+           title = title[:match.start()].strip()
+
+        return title
+    # ==================================================================
+    # TITLE EXTRACTION
+    # ==================================================================
+
+    def _extract_title(
+        self,
+        text: str,
+        lines: List[str],
+    ) -> str:
+        """
+        Extract the most descriptive tender title.
+
+        Strategy:
+        1. Search only the opening portion of the document.
+        2. Build candidate titles from adjacent lines.
+        3. Reject generic document headings.
+        4. Score candidates using title-specific heuristics.
+        5. Extend the best candidate only when continuation is safe.
+        6. Use a conservative fallback.
+        """
+
+        candidates = []
+
+        # Titles almost always occur near the beginning.
+        search_window = lines[:80]
+
+        for idx in range(len(search_window)):
+
+            candidate_parts = []
+
+            for offset in range(4):
+
+                if idx + offset >= len(search_window):
+                    break
+
+                part = search_window[idx + offset].strip()
+
+                if not part:
+                    break
+
+                # Do not allow title candidates to consume authority
+                # or administrative metadata lines.
+                if offset > 0 and self._is_authority_or_admin_line(part):
+                    break
+
+                candidate_parts.append(part)
+
+                combined = " ".join(candidate_parts)
+
+                cleaned = self._clean_title_candidate(combined)
+
+                if not cleaned:
+                    continue
+
+                score = self._score_title_candidate(
+                    cleaned,
+                    idx,
+                )
+
+                if score > 0:
+                    candidates.append(
+                        (
+                            score,
+                            cleaned,
+                            idx,
+                            len(candidate_parts),
+                        )
+                    )
+
+        # Tender notice heading followed by descriptive title.
+        #
+        # Many tender documents place the actual opportunity title
+        # immediately after a generic notice heading such as:
+        #
+        #     NOTICE INVITING TENDER
+        #     Appointment of Structural Consultant ...
+        #
+        # The generic heading itself is not the title, but the
+        # following one or more lines often contain the complete
+        # descriptive title.
+        # --------------------------------------------------------------
+
+        notice_headings = {
+            "notice inviting tender",
+            "notice inviting offers",
+            "notice inviting proposal",
+            "notice inviting proposals",
+            "tender notice",
+            "invitation for tender",
+            "invitation to tender",
+        }
+
+        for idx, line in enumerate(search_window):
+
+            current = line.strip().lower()
+
+            if current not in notice_headings:
+                continue
+
+            title_parts = []
+
+            for next_idx in range(
+                idx + 1,
+                min(idx + 4, len(search_window)),
+            ):
+
+                next_line = search_window[next_idx].strip()
+
+                if not next_line:
+                    break
+
+                if self._is_authority_or_admin_line(
+                    next_line
+                ):
+                    break
+
+                if self._is_generic_heading(
+                    next_line
+                ):
+                    break
+
+                cleaned = self._clean_title_candidate(
+                    next_line
+                )
+
+                if not cleaned:
+                    continue
+           
+                lower = cleaned.lower()
+ 
+                if self._looks_like_metadata(cleaned):
+                    break
+
+                if self._is_likely_paragraph(cleaned):
+                    break
+
+                if re.search(
+                    r"\b(?:rs\.?|inr|₹)\s*[\d,]+(?:\.\d+)?\s*(?:/-?|[-–—])?\s*$",
+                    cleaned,
+                    flags=re.IGNORECASE,
+                ):
+                    break
+                
+                if not cleaned:
+                    continue
+
+                title_parts.append(cleaned)
+
+                candidate = " ".join(
+                    title_parts
+                )
+
+            # Evaluate the complete title after collecting all safe
+            # continuation lines rather than returning after the first
+            # descriptive line.
+            if len(title_parts) >= 1:
+
+                candidate = " ".join(title_parts)
+
+                if len(candidate.split()) >= 4:
+
+                    score = self._score_title_candidate(
+                        candidate,
+                        idx,
+                    )
+
+                    if score > 0:
+                        candidates.append(
+                           (
+                            score,
+                            self._clean_title_metadata(candidate),
+                            idx,
+                            len(title_parts),
+                            )
+                        )
+        # --------------------------------------------------------------
+
+        if candidates:
+
+            candidates.sort(
+                key=lambda item: (
+                    item[0],
+                    -item[2],
+                ),
+                reverse=True,
+            )
+
+            best_score, best_title, start_idx, lines_used = candidates[0]
+
+            return self._extend_title(
+                title=best_title,
+                start_index=start_idx,
+                lines=search_window,
+                lines_used=lines_used,
+            )
+        # --------------------------------------------------------------
+        # Secondary fallback:
+        # Generic heading followed by descriptive title.
+        # --------------------------------------------------------------
+
+        for idx, line in enumerate(search_window[:-1]):
+
+            current = line.strip()
+
+            if not self._is_generic_heading(current):
+                continue
+
+            next_line = self._clean_title_candidate(
+                search_window[idx + 1]
+            )
+
+            if not next_line:
+                continue
+
+            if len(next_line.split()) >= 4:
+                return next_line
+
+        # --------------------------------------------------------------
+        # Final fallback:
+        # Return the first reasonable descriptive line.
+        # --------------------------------------------------------------
+
+        for line in search_window:
+
+            cleaned = self._clean_title_candidate(line)
+
+            if not cleaned:
+                continue
+
+            if self._is_generic_heading(cleaned):
+                continue
+
+            if self._looks_like_metadata(cleaned):
+                continue
+
+            if len(cleaned.split()) >= 4:
+                return cleaned
+
+        return ""
+
+    # ------------------------------------------------------------------
+
+    def _extend_title(
+        self,
+        title: str,
+        start_index: int,
+        lines: List[str],
+        lines_used: int,
+    ) -> str:
+        """
+        Safely extend a selected title across adjacent lines.
+
+        The method stops when the next line appears to be:
+        - a numbered section
+        - an administrative field
+        - contact information
+        - a date
+        - a URL
+        - a paragraph
+        - an authority/department line
+        - another generic heading
+        """
+
+        title_parts = [title]
+
+        idx = start_index + lines_used
+
+        while idx < len(lines):
+
+            raw_line = lines[idx].strip()
+
+            if not raw_line:
+                break
+
+            line = self._clean_title_candidate(raw_line)
+
+            if not line:
+                break
+
+            lower = line.lower()
+
+            # ----------------------------------------------------------
+            # Hard stop rules
+            # ----------------------------------------------------------
+
+            if re.match(r"^\d+(\.\d+)*\s+", line):
+                break
+
+            if self._is_authority_or_admin_line(line):
+                break
+
+            if self._is_generic_heading(line):
+                break
+
+            if self._looks_like_metadata(line):
+                break
+
+            administrative_prefixes = (
+                "organization:",
+                "organisation:",
+                "tender reference:",
+                "tender ref:",
+                "reference number:",
+                "ref. no:",
+                "ref no:",
+                "location:",
+                "address:",
+                "contact:",
+                "scope of work:",
+                "brief scope:",
+                "project description:",
+                "description of work:",
+                "last date:",
+                "last date for submission:",
+                "submission date:",
+                "tender fee:",
+                "emd:",
+                "email:",
+                "phone:",
+                "mobile:",
+            )
+
+            if lower.startswith(administrative_prefixes):
+                break
+
+            if re.search(r"https?://|www\.", lower):
+                break
+
+            if "@" in line:
+                break
+
+            if re.search(
+                r"\b(email|e-mail|phone|mobile|fax|telephone|tel)\b",
+                lower,
+            ):
+                break
+
+            if re.search(
+                r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+                line,
+            ):
+                break
+
+            # Stop before work-value / estimated-cost lines such as:
+            # "Civil Work Rs.87,69,823/-"
+            # "Estimated Cost Rs. 1,25,000/-"
+            # These are administrative values, not part of the title.
+            if re.search(
+                r"\b(?:rs\.?|inr|₹)\s*[\d,]+(?:\.\d+)?\s*(?:/-?|[-–—])?\s*$",
+                line,
+                flags=re.IGNORECASE,
+            ):
+                break
+
+            if len(line.split()) > 18:
+                break
+
+            if self._is_likely_paragraph(line):
+                break
+
+            # ----------------------------------------------------------
+            # Add safe continuation.
+            # ----------------------------------------------------------
+
+            title_parts.append(line)
+
+            idx += 1
+
+        final_title = " ".join(title_parts)
+
+        final_title = re.sub(
+            r"\s+",
+            " ",
+            final_title,
+        ).strip()
+
+        # Titles are structured fields, not sentences: a trailing
+        # full stop carried over from the source document (common
+        # when a title is the last line before a new section) is
+        # cosmetic noise, not meaningful content.
+        final_title = final_title.rstrip(" .")
+
+        final_title = self._remove_repeated_title_phrase(
+            final_title
+        )
+
+        return final_title
+
+    # ------------------------------------------------------------------
+
+    def _remove_repeated_title_phrase(
+        self,
+        title: str,
+    ) -> str:
+        """
+        Remove duplicated phrases created when a title is split across
+        multiple lines.
+
+        Example:
+
+        Empanelment of Consultants for Comprehensive Architectural
+        & Engineering Services Empanelment of Consultants
+
+        Becomes:
+
+        Empanelment of Consultants for Comprehensive Architectural
+        & Engineering Services
+        """
+
+        words = title.split()
+
+        if len(words) < 8:
+            return title
+
+        # Search longer repeated phrases first.
+        for phrase_length in range(8, 1, -1):
+
+            for start in range(len(words)):
+
+                end = start + phrase_length
+
+                if end > len(words):
+                    continue
+
+                phrase = words[start:end]
+
+                for later_start in range(
+                    end,
+                    len(words) - phrase_length + 1,
+                ):
+
+                    later_end = later_start + phrase_length
+
+                    if words[later_start:later_end] != phrase:
+                        continue
+
+                    # Only remove a duplicate if it is genuinely
+                    # repeated later in the title.
+                    words = (
+                        words[:later_start]
+                        + words[later_end:]
+                    )
+
+                    return " ".join(words)
+
+        return title
+
+    # ------------------------------------------------------------------
+
+    def _clean_title_candidate(
+        self,
+        line: str,
+    ) -> str:
+        """
+        Clean a potential title while preserving meaningful wording.
+        """
+
+        if not line:
+            return ""
+
+        line = re.sub(
+            r"\s+",
+            " ",
+            line,
+        ).strip()
+
+        # Remove common document prefixes repeatedly.
+        while True:
+
+            original = line
+
+            line = re.sub(
+                r"^(DOCUMENT\s+FOR\s+EOI|"
+                r"DOCUMENT|"
+                r"EOI|"
+                r"REQUEST\s+FOR\s+PROPOSAL|"
+                r"RFP\s+DOCUMENT|"
+                r"TENDER\s+DOCUMENT|"
+                r"INVITATION\s+NOTICE|"
+                r"NOTICE\s+INVITING\s+TENDER|"
+                r"NIT|"
+                r"BID\s+DOCUMENT)"
+                r"\s*[:\-]?\s*",
+                "",
+                line,
+                flags=re.IGNORECASE,
+            )
+
+            line = re.sub(
+                r"^(SECTION\s*[-–]?\s*[IVX0-9A-Z]+|"
+                r"PART\s+[A-Z0-9]+|"
+                r"CHAPTER\s+\d+)"
+                r"\s*[:\-]?\s*",
+                "",
+                line,
+                flags=re.IGNORECASE,
+            )
+
+            line = line.strip()
+
+            if line == original:
+                break
+
+        # Remove decorative leading punctuation.
+        line = re.sub(
+            r"^[\-\•\*\.:]+",
+            "",
+            line,
+        ).strip()
+
+        # Remove simple numbering.
+        line = re.sub(
+            r"^\d+[\.\)]\s*",
+            "",
+            line,
+        )
+
+        # Remove dotted TOC leaders.
+        line = re.sub(
+            r"\.{4,}.*$",
+            "",
+            line,
+        ).strip()
+
+        # Remove dashed TOC leaders.
+        line = re.sub(
+            r"\-{4,}.*$",
+            "",
+            line,
+        ).strip()
+
+        # Remove trailing page numbers.
+        line = re.sub(
+            r"\s+\d+\s*$",
+            "",
+            line,
+        ).strip()
+
+        # --------------------------------------------------------------
+        # Metadata boundary trimming.
+        #
+        # Titles frequently share a physical line (or are joined into
+        # one candidate string) with metadata such as:
+        #
+        #     Empanelment of Structural Engineers for consultancy
+        #     services Location: Navi Mumbai Last Date for
+        #     Submission: 27/07/2017
+        #
+        # The title must end before the first metadata label so that
+        # scoring in `_extract_title()` operates on the clean
+        # candidate rather than a contaminated one. This mirrors
+        # `_clean_title_metadata()`, which is applied again as a
+        # final safety net once the title has been fully selected.
+        # --------------------------------------------------------------
+
+        line = self._clean_title_metadata(line)
+
+        # Reject excessive punctuation noise.
+        if line.count(".") > 5:
+            return ""
+
+        if line.count("-") > 8:
+            return ""
+
+        if len(line) < 8:
+            return ""
+
+        if len(line) > 250:
+            return ""
+
+        if re.fullmatch(
+            r"[-=•_* ]+",
+            line,
+        ):
+            return ""
+
+        return line
+
+    # ------------------------------------------------------------------
+
+    def _is_generic_heading(
+        self,
+        text: str,
+    ) -> bool:
+        """
+        Return True when text is a generic document heading rather than
+        a descriptive tender title.
+        """
+
+        if not text:
+            return False
+
+        value = text.lower().strip()
+
+        value = re.sub(
+            r"\s+",
+            " ",
+            value,
+        )
+
+        for pattern in self.GENERIC_TITLE_PATTERNS:
+
+            if re.fullmatch(
+                pattern,
+                value,
+            ):
+                return True
+
+        return False
+
+    # ------------------------------------------------------------------
+
+    def _is_authority_or_admin_line(
+        self,
+        line: str,
+    ) -> bool:
+        """
+        Identify lines that should not be consumed as part of a title.
+        """
+
+        if not line:
+            return False
+
+        lower = line.lower().strip()
+
+        authority_patterns = [
+            r"^government\s+of\b",
+            r"^govt\.?\s+of\b",
+            r"\bpublic\s+works\s+department\b",
+            r"\bministry\s+of\b",
+            r"^department\s+of\b",
+            r"\bchief\s+engineer\b",
+            r"\bexecutive\s+engineer\b",
+            r"\bsuperintending\s+engineer\b",
+            r"^office\s+of\b",
+            r"^directorate\s+of\b",
+            
+            r"\bhouse\b.*\b\d{1,6}\b",
+            r"\broad\b.*\b\d{1,6}\b",
+            r"\bstreet\b.*\b\d{1,6}\b",
+            r"\broad\s+no\.?\b",
+            r"\bdoor\s+no\.?\b",
+            r"\bplot\s+no\.?\b",
+            r"\bplot\s+number\b",
+            r"\bbuilding\s+no\.?\b",
+            r"\bbuilding\s+number\b",
+            r"\bp\.?o\.?\s*[:\-]",
+            r"\bp\.?s\.?\s*[:\-]",
+            r"\bdistrict\s*[:\-]",
+            r"\bpin\s*[:\-]?\s*\d{6}\b",
+            r"\bpincode\s*[:\-]?\s*\d{6}\b",
+        ]
+
+        return any(
+            re.search(
+                pattern,
+                lower,
+            )
+            for pattern in authority_patterns
+        )
+
+    # ------------------------------------------------------------------
+
+    def _looks_like_metadata(
+        self,
+        line: str,
+    ) -> bool:
+        """
+        Detect common administrative metadata lines.
+        """
+
+        if not line:
+            return False
+
+        lower = line.lower().strip()
+
+        metadata_patterns = [
+            r"^date\s*[:\-]",
+            r"^place\s*[:\-]",
+            r"^address\s*[:\-]",
+            r"^email\s*[:\-]",
+            r"^e-mail\s*[:\-]",
+            r"^phone\s*[:\-]",
+            r"^mobile\s*[:\-]",
+            r"^telephone\s*[:\-]",
+            r"^fax\s*[:\-]",
+            r"^website\s*[:\-]",
+            r"^contact\s*[:\-]",
+            r"^gstin?\s*[:\-]",
+            r"^pan\s*[:\-]",
+        ]
+
+        return any(
+            re.search(
+                pattern,
+                lower,
+            )
+            for pattern in metadata_patterns
+        )
+
+    # ------------------------------------------------------------------
+
+    def _is_likely_paragraph(
+        self,
+        line: str,
+    ) -> bool:
+        """
+        Detect sentence-like body text that should not be appended to
+        a title.
+        """
+
+        if not line:
+            return False
+
+        lower = line.lower().strip()
+
+        paragraph_phrases = [
+            "applications are invited",
+            "sealed bids",
+            "invites bids",
+            "invites proposals",
+            "intends to",
+            "the authority intends",
+            "the department intends",
+            "interested parties",
+            "eligible bidders",
+            "bidders are requested",
+            "the successful bidder",
+            "shall be responsible",
+            "will be responsible",
+            "are hereby invited",
+            "is hereby invited",
+        ]
+
+        if any(
+            phrase in lower
+            for phrase in paragraph_phrases
+        ):
+            return True
+
+        # A long line with multiple sentence-like punctuation marks is
+        # usually body text.
+        if len(line.split()) > 18:
+            return True
+
+        if line.count(",") >= 4:
+            return True
+
+        # A trailing full stop is only treated as a paragraph signal
+        # once the line is long enough to plausibly be a sentence.
+        # Short continuation phrases (e.g. "Area at IIT Delhi.") are
+        # common, legitimate tail-ends of a title and must not be
+        # rejected just because the source document terminated the
+        # title with a period.
+        if line.endswith(
+            (
+                ".",
+                ";",
+            )
+        ) and len(line.split()) > 6:
+            return True
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Organization Extraction
+    # ------------------------------------------------------------------
+
+    def _is_invalid_organization_candidate(
+        self,
+        candidate: str,
+    ) -> bool:
+        """
+        Reject obvious non-organization text.
+
+        This is a conservative, hard-rejection safety net applied on
+        top of `_score_organization_candidate()`'s scoring/penalties.
+        Some candidates can accumulate enough incidental positive
+        signal (e.g. position, word count) to survive scoring despite
+        clearly being financial/date/contact metadata rather than an
+        issuing organization name (e.g. "EMD: Rs. 50,000/- Document
+        Fee: Rs. 1,500/-"). This helper exists to reject that kind of
+        candidate outright, regardless of score.
+        """
+
+        if not candidate:
+            return True
+
+        candidate = re.sub(
+            r"\s+",
+            " ",
+            candidate,
+        ).strip()
+
+        lower = candidate.lower()
+
+        # --------------------------------------------------
+        # Contact / financial metadata
+        # --------------------------------------------------
+
+        if re.search(
+            r"\b(?:emd|e\.m\.d\.|"
+            r"document\s+fee|"
+            r"tender\s+fee|"
+            r"bid\s+fee|"
+            r"document\s+cost|"
+            r"earnest\s+money|"
+            r"bid\s+security)\b",
+            lower,
+        ):
+            return True
+
+        # --------------------------------------------------
+        # Date / submission metadata
+        # --------------------------------------------------
+
+        if re.search(
+            r"\b(?:last\s+date|"
+            r"closing\s+date|"
+            r"closing\s+time|"
+            r"submission\s+date|"
+            r"submission\s+deadline|"
+            r"deadline|"
+            r"due\s+date)\b",
+            lower,
+        ):
+            return True
+
+        # --------------------------------------------------
+        # Location metadata
+        # --------------------------------------------------
+
+        if re.search(
+            r"^(?:location|"
+            r"project\s+location|"
+            r"site|"
+            r"project\s+site|"
+            r"place|"
+            r"place\s+of\s+work|"
+            r"work\s+location)\s*[:\-]",
+            lower,
+        ):
+            return True
+
+        # --------------------------------------------------
+        # Contact information
+        # --------------------------------------------------
+
+        if "@" in candidate:
+            return True
+
+        if re.search(
+            r"https?://|www\.",
+            candidate,
+            flags=re.IGNORECASE,
+        ):
+            return True
+
+        # --------------------------------------------------
+        # Money
+        # --------------------------------------------------
+
+        if re.search(
+            r"(?:₹|rs\.?|inr)\s*[0-9]",
+            candidate,
+            flags=re.IGNORECASE,
+        ):
+            return True
+
+        # --------------------------------------------------
+        # Excessively long sentence
+        # --------------------------------------------------
+
+        if len(candidate.split()) > 15:
+            return True
+
+        return False
+
+    def _clean_organization_candidate(
+        self,
+        candidate: str,
+    ) -> str:
+        """
+        Clean an organization candidate while preserving useful hierarchy.
+        """
+
+        if not candidate:
+            return ""
+
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+
+        # Remove bullets and decorative prefixes.
+        candidate = re.sub(r"^[•*.\-]+\s*", "", candidate)
+
+        # Remove numbering.
+        candidate = re.sub(r"^\d+[\.\)]\s*", "", candidate)
+
+        # Remove TOC leaders.
+        candidate = re.sub(r"\.{4,}.*$", "", candidate)
+        candidate = re.sub(r"\-{4,}.*$", "", candidate)
+
+        # Remove trailing page numbers.
+        candidate = re.sub(r"\s+\d+\s*$", "", candidate)
+
+        # Remove decorative punctuation.
+        candidate = candidate.strip(":- ")
+
+        if len(candidate) < 5:
+            return ""
+
+        if len(candidate) > 220:
+            return ""
+
+        return candidate
+
+    def _score_title_candidate(
+        self,
+        title: str,
+        line_index: int,
+    ) -> int:
+        """
+        Score a title candidate.
+
+        Higher score indicates a more likely descriptive tender title.
+
+        The scorer favors:
+        - descriptive tender/service language
+        - structural engineering terminology
+        - reasonable title length
+        - early document position
+
+        It strongly penalizes:
+        - generic notices/headings
+        - organization/authority names
+        - administrative metadata
+        - paragraph-like content
+        - contact/address information
+        """
+
+        title_lower = title.lower().strip()
+
+        if not title_lower:
+            return -100
+
+        # --------------------------------------------------------------
+        # Hard rejection
+        # --------------------------------------------------------------
+
+        if self._is_generic_heading(title):
+            return -100
+
+        if self._looks_like_metadata(title):
+            return -100
+
+        # Contact / URL content can never be a title.
+        if "@" in title:
+            return -100
+
+        if re.search(
+            r"https?://|www\.",
+            title_lower,
+        ):
+            return -100
+
+        if re.search(
+            r"\b(email|e-mail|phone|mobile|fax|telephone)\b",
+            title_lower,
+        ):
+            return -100
+
+        score = 0
+
+        # --------------------------------------------------------------
+        # Position
+        # --------------------------------------------------------------
+        #
+        # Titles normally occur near the beginning, but do not make
+        # position overwhelmingly dominant because organization/header
+        # lines may occupy the first few lines.
+        # --------------------------------------------------------------
+
+        score += max(
+            0,
+            25 - line_index,
+        )
+
+        # --------------------------------------------------------------
+        # Length / word count
+        # --------------------------------------------------------------
+
+        words = title.split()
+        word_count = len(words)
+
+        if 5 <= word_count <= 18:
+            score += 35
+
+        elif 19 <= word_count <= 25:
+            score += 20
+
+        elif 4 <= word_count < 5:
+            score += 10
+
+        elif word_count < 4:
+            score -= 20
+
+        else:
+            score -= 20
+
+        if len(title) >= 35:
+            score += 10
+
+        if len(title) > 180:
+            score -= 30
+
+        if len(title) > 250:
+            score -= 60
+
+        # --------------------------------------------------------------
+        # Strong tender/service indicators
+        # --------------------------------------------------------------
+
+        preferred_starts = [
+            "empanelment",
+            "selection",
+            "appointment",
+            "consultancy",
+            "request for proposal",
+            "expression of interest",
+            "invitation",
+            "design",
+            "construction",
+            "structural",
+            "proof checking",
+            "peer review",
+            "structural audit",
+            "retrofitting",
+            "rehabilitation",
+            "assessment",
+        ]
+
+        if any(
+            title_lower.startswith(start)
+            for start in preferred_starts
+        ):
+            score += 25
+
+        # --------------------------------------------------------------
+        # Tender / engineering keywords
+        # --------------------------------------------------------------
+
+        for keyword in self.TITLE_KEYWORDS:
+
+            if keyword in title_lower:
+                score += 8
+
+        engineering_keywords = [
+            "structural",
+            "structure",
+            "structural audit",
+            "structural assessment",
+            "structural analysis",
+            "structural design",
+            "proof checking",
+            "proof check",
+            "peer review",
+            "retrofitting",
+            "rehabilitation",
+            "civil",
+            "consultant",
+            "consultancy",
+            "engineering",
+            "industrial building",
+            "industrial shed",
+            "warehouse",
+            "building",
+            "rcc",
+            "steel structure",
+            "pep",
+            "shm",
+        ]
+
+        engineering_hits = sum(
+            1
+            for keyword in engineering_keywords
+            if keyword in title_lower
+        )
+
+        if engineering_hits:
+            score += min(
+                35,
+                engineering_hits * 7,
+            )
+
+        # --------------------------------------------------------------
+        # Useful tender language
+        # --------------------------------------------------------------
+
+        useful_terms = [
+            "empanelment",
+            "consultancy",
+            "consultant",
+            "services",
+            "structural",
+            "audit",
+            "assessment",
+            "analysis",
+            "design",
+            "proof checking",
+            "peer review",
+            "retrofitting",
+            "rehabilitation",
+            "construction",
+            "works",
+            "appointment",
+            "selection",
+            "proposal",
+            "expression of interest",
+            "invitation",
+        ]
+
+        useful_hits = sum(
+            1
+            for keyword in useful_terms
+            if keyword in title_lower
+        )
+
+        if useful_hits:
+            score += min(
+                30,
+                useful_hits * 5,
+            )
+
+        # --------------------------------------------------------------
+        # Paragraph language
+        # --------------------------------------------------------------
+
+        paragraph_phrases = [
+            "intends to",
+            "implemented through",
+            "under administrative",
+            "applications are invited",
+            "application is invited",
+            "having required",
+            "shall be",
+            "will be",
+            "may be",
+            "is invited",
+            "for preparation of",
+            "required manpower",
+            "the authority intends",
+            "the department intends",
+            "the consultant shall",
+            "the bidder shall",
+            "bidders are requested",
+            "interested parties are requested",
+        ]
+
+        for phrase in paragraph_phrases:
+
+            if phrase in title_lower:
+                score -= 35
+
+        # --------------------------------------------------------------
+        # Administrative / notice language
+        # --------------------------------------------------------------
+
+        bad_starts = [
+            "procure",
+            "provide",
+            "under ",
+            "implemented",
+            "applications",
+            "application",
+            "having ",
+            "the ",
+            "whereas",
+            "notice",
+            "name of",
+            "address",
+            "contact",
+            "last date",
+            "date of",
+            "submission",
+            "eligibility",
+            "instructions",
+        ]
+
+        if any(
+            title_lower.startswith(start)
+            for start in bad_starts
+        ):
+            score -= 30
+
+        # --------------------------------------------------------------
+        # Organization-like language
+        # --------------------------------------------------------------
+        #
+        # Prevent the issuing organization from winning simply because
+        # it is early in the document and has several words.
+        # --------------------------------------------------------------
+
+        organization_indicators = [
+            "government of",
+            "ministry",
+            "department",
+            "directorate",
+            "authority",
+            "corporation",
+            "board",
+            "commission",
+            "university",
+            "institute",
+            "municipal corporation",
+            "development corporation",
+            "development authority",
+            "industrial development",
+        ]
+
+        organization_hits = sum(
+            1
+            for keyword in organization_indicators
+            if keyword in title_lower
+        )
+
+        if organization_hits:
+            score -= min(
+                45,
+                organization_hits * 15,
+            )
+
+        # Organization names frequently appear fully uppercase.
+        #
+        # Do not reject uppercase titles outright because tender titles
+        # are also frequently printed in uppercase. Apply only a modest
+        # penalty when the candidate also looks institutional.
+        if (
+            title.isupper()
+            and organization_hits
+        ):
+            score -= 15
+
+        # --------------------------------------------------------------
+        # Address contamination
+        # --------------------------------------------------------------
+
+        address_indicators = [
+            "ground floor",
+            "first floor",
+            "second floor",
+            "third floor",
+            "fourth floor",
+            "fifth floor",
+            "plot no",
+            "plot number",
+            "sector",
+            "sec.",
+            "road",
+            "street",
+            "lane",
+            "avenue",
+            "building no",
+            "block",
+            "wing",
+            "estate",
+            "complex",
+            "premises",
+            "pincode",
+            "pin code",
+        ]
+
+        address_hits = sum(
+            1
+            for indicator in address_indicators
+            if indicator in title_lower
+        )
+
+        if address_hits:
+            score -= min(
+                50,
+                address_hits * 15,
+            )
+
+        # --------------------------------------------------------------
+        # Punctuation / document noise
+        # --------------------------------------------------------------
+
+        if ":" in title:
+            score += 5
+
+        if title.count(",") >= 2:
+            score -= 15
+
+        if title.count(".") >= 1:
+            score -= 10
+
+        if any(
+            section in title_lower
+            for section in self.SECTION_HINTS
+        ):
+            score -= 20
+
+        # --------------------------------------------------------------
+        # Useful structural/tender indicators
+        # --------------------------------------------------------------
+
+        if re.search(
+            r"\b\d{4}\b",
+            title,
+        ):
+            score += 2
+
+        if re.search(
+            r"\bpackage\b",
+            title_lower,
+        ):
+            score += 5
+
+        if re.search(
+            r"\bwork\b",
+            title_lower,
+        ):
+            score += 5
+
+        if re.search(
+            r"\bservices\b",
+            title_lower,
+        ):
+            score += 5
+
+        return score
+
+    def _normalize_organization(
+        self,
+        organization: str,
+    ) -> str:
+        """
+        Normalize an extracted organization while preserving
+        its hierarchical structure.
+        """
+
+        if not organization:
+            return ""
+        
+        # Remove explanatory/legal-status parentheticals while
+        # preserving short organization abbreviations such as (KINFRA).
+        organization = re.sub(
+            r"\(\s*(?:a|an|the)\s+"
+            r"(?:statutory|government|govt|public|autonomous|"
+            r"registered|state|central|national)\b[^)]*\)",
+            "",
+            organization,
+            flags=re.IGNORECASE,
+        )
+
+        # Collapse whitespace.
+        organization = re.sub(r"\s+", " ", organization).strip()
+
+        # Split into logical parts where possible.
+        parts = re.split(r"\s{2,}|\n", organization)
+
+        cleaned = []
+        seen = set()
+
+        for part in parts:
+
+            part = part.strip(" ,:-")
+
+            if not part:
+                continue
+
+            key = part.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            cleaned.append(part)
+
+        organization = " ".join(cleaned)
+
+        organization = re.sub(
+            r"\s+",
+            " ",
+            organization,
+        ).strip()
+
+        return organization
+
+    def _generate_organization_candidates(
+        self,
+        lines: List[str],
+    ) -> List[Tuple[str, int]]:
+        """
+        Generate hierarchical organization candidates from the
+        beginning of the document.
+
+        Candidate generation is intentionally limited to the document
+        header area. Standalone document headings such as "NEWSPAPER
+        NOTICE" or "WEBSITE NOTICE" are treated as boundaries so they
+        cannot be incorrectly merged with the issuing organization.
+
+        Returns:
+        List[(candidate, starting_line_index)]
+        """
+        candidates = []
+
+        search_window = lines[:100]
+
+        stop_keywords = {
+            "scope of work",
+            "brief scope",
+            "project description",
+            "tender description",
+            "description of work",
+            "eligibility",
+            "important dates",
+            "critical dates",
+            "bid submission",
+            "submission",
+            "instructions",
+            "annexure",
+            "appendix",
+            "table of contents",
+            "contents",
+            "schedule",
+            "corrigendum",
+            
+             # Administrative / financial boundaries.
+            "emd",
+            "e.m.d.",
+            "earnest money",
+            "earnest money deposit",
+            "bid security",
+            "document fee",
+            "tender fee",
+            "bid fee",
+            "document cost",
+            "tender document fee",
+            "cost of tender document",
+            "cost of bid document",
+            "email",
+            "e-mail",
+            "phone",
+            "mobile",
+            "telephone",
+            "fax",
+            "contact details",
+            "last date",
+            "deadline",
+            "closing date",
+            "closing time",
+            "submission date",
+            "date of submission",
+            "location",
+            "project location",
+            "site location",
+            "project site",
+        }
+    
+
+        document_heading_only = {
+            "newspaper notice",
+            "website notice",
+            "public notice",
+            "tender notice",
+            "notice",
+            "invitation notice",
+            "notice inviting tender",
+            "notice inviting offers",
+        }
+
+        for idx in range(len(search_window)):
+
+            parts = []
+
+            for offset in range(4):
+
+                if idx + offset >= len(search_window):
+                    break
+
+                line = search_window[idx + offset].strip()
+
+                if not line:
+                    break
+
+                lower = line.lower()
+
+                # ------------------------------------------
+                # Hard Stops
+                # ------------------------------------------
+
+                if re.match(r"^\d+(\.\d+)*\s", line):
+                    break
+
+                if "@" in line:
+                    break
+
+                if re.search(r"https?://|www\.", lower):
+                    break
+
+                if re.search(
+                    r"\b(email|phone|mobile|fax|telephone)\b",
+                    lower,
+                ):
+                    break
+
+                if re.search(
+                    r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b",
+                    line,
+                ):
+                    break
+
+                if any(keyword in lower for keyword in stop_keywords):
+                    break
+
+                # ------------------------------------------
+                # Document-heading boundary
+                # ------------------------------------------
+                #
+                # These are document labels, not organization
+                # names. They must not be merged with the next
+                # line into an organization candidate.
+                #
+                if lower in document_heading_only:
+                    break
+
+                # Long paragraphs are never organisation names.
+                if len(line.split()) > 15:
+                    break
+
+                parts.append(line)
+
+                candidates.append(
+                    (" ".join(parts), idx)
+                )
+
+        return candidates
+
+    def _is_section_header(
+        self,
+        line: str,
+    ) -> bool:
+        """
+        Return True if the line appears to begin a new
+        document section.
+        """
+
+        if not line:
+            return False
+
+        line = line.strip()
+
+        lower = line.lower()
+
+        # Numbered sections.
+        if re.match(
+            r"^\d+(\.\d+)*\s+",
+            line,
+        ):
+            return True
+
+        # Common tender section headings.
+        headers = [
+            "eligibility",
+            "eligibility criteria",
+            "instructions",
+            "instructions to bidders",
+            "qualification",
+            "qualification criteria",
+            "general conditions",
+            "special conditions",
+            "terms and conditions",
+            "important dates",
+            "critical dates",
+            "bid schedule",
+            "scope of work",
+            "evaluation",
+            "evaluation criteria",
+            "payment terms",
+            "emd",
+            "earnest money",
+            "document fee",
+            "security deposit",
+            "contact details",
+            "annexure",
+            "appendix",
+            "corrigendum",
+            "submission requirements",
+        ]
+
+        if lower in headers:
+            return True
+
+        # Fully uppercase headings.
+        if (
+            line.isupper()
+            and 2 <= len(line.split()) <= 10
+            and len(line) < 80
+        ):
+            return True
+
+        return False
+    
+    
+    def _score_organization_candidate(
+        self,
+        candidate: str,
+        line_index: int,
+    ) -> int:
+        """
+        Score an organization candidate.
+
+        Higher score = more likely to be the issuing organization.
+
+        The scorer intentionally penalizes candidates that appear to contain
+        address/contact/document noise. This is important because the candidate
+        generator creates hierarchical combinations from consecutive header lines.
+        """
+
+        lower = candidate.lower()
+        score = 0
+
+        # --------------------------------------------------
+        # Position
+        # --------------------------------------------------
+
+        score += max(
+            0,
+            35 - line_index,
+        )
+
+        # --------------------------------------------------
+        # Government / institutional indicators
+        # --------------------------------------------------
+
+        for keyword in self.GOVERNMENT_KEYWORDS:
+            if keyword in lower:
+                score += 15
+
+        if candidate.count(" ") >= 4:
+            score += 10
+
+        # --------------------------------------------------
+        # Strong organization indicators
+        # --------------------------------------------------
+
+        strong_keywords = [
+            "government of",
+            "ministry",
+            "department",
+            "directorate",
+            "authority",
+            "corporation",
+            "office of",
+            "board",
+            "commission",
+            "university",
+            "institute",
+        ]
+
+        for keyword in strong_keywords:
+            if keyword in lower:
+                score += 12
+
+        # --------------------------------------------------
+        # Document/header noise
+        # --------------------------------------------------
+        administrative_prefixes = [
+            "emd",
+            "e.m.d.",
+            "earnest money",
+            "earnest money deposit",
+            "bid security",
+            "document fee",
+            "tender fee",
+            "bid fee",
+            "document cost",
+            "tender document fee",
+            "cost of tender document",
+            "cost of bid document",
+            "email",
+            "e-mail",
+            "phone",
+            "mobile",
+            "telephone",
+            "fax",
+            "contact",
+            "location",
+            "project location",
+            "site",
+            "project site",
+            "last date",
+            "deadline",
+            "closing date",
+            "submission date",
+        ]
+
+        if any(
+            lower.startswith(prefix)
+            for prefix in administrative_prefixes
+        ):
+            score -= 60
+            
+        noise_prefixes = [
+            "newspaper notice",
+            "website notice",
+            "notice",
+            "advertisement",
+            "public notice",
+            "press notice",
+        ]
+
+        for prefix in noise_prefixes:
+            if lower.startswith(prefix):
+                score -= 25
+                break
+
+        # --------------------------------------------------
+        # Address contamination
+        # --------------------------------------------------
+
+        address_indicators = [
+            "ground floor",
+            "first floor",
+            "second floor",
+            "third floor",
+            "fourth floor",
+            "fifth floor",
+            "floor",
+            "plot no",
+            "plot number",
+            "sector",
+            "sec.",
+            "road",
+            "street",
+            "lane",
+            "avenue",
+            "building",
+            "block",
+            "wing",
+            "estate",
+            "complex",
+            "premises",
+            "pincode",
+            "pin code",
+            "navi mumbai",
+            "new delhi",
+            "mumbai",
+            "gurgaon",
+            "gurugram",
+            "noida",
+        ]
+
+        address_hits = sum(
+            1
+            for indicator in address_indicators
+            if indicator in lower
+        )
+
+        if address_hits:
+            score -= min(
+                50,
+                address_hits * 18,
+            )
+
+        # --------------------------------------------------
+        # Numeric address content
+        # --------------------------------------------------
+
+        if re.search(
+            r"\b(?:plot|flat|shop|unit|house|door)\s*"
+            r"(?:no\.?|number)?\s*\d+",
+            lower,
+        ):
+            score -= 25
+
+        if re.search(
+            r"\bsec(?:tor)?\.?\s*\d+\b",
+            lower,
+        ):
+            score -= 20
+
+        # --------------------------------------------------
+        # Tender/title language
+        # --------------------------------------------------
+
+        tender_language = [
+            "empanelment",
+            "consultancy services",
+            "applications are invited",
+            "application is invited",
+            "invitation",
+            "repair",
+            "waterproofing",
+            "painting works",
+            "repair cum",
+            "request for proposal",
+            "request for quotation",
+            "expression of interest",
+            "notice inviting",
+            "tender",
+            "scope of work",
+            "services for",
+            "works for",
+            "rehabilitation",
+            "retrofitting",
+            "rehabilitation and retrofitting",
+            "rcc",
+            "slabs",
+            "beams",
+            "various rooms",
+            "hostel area",
+            "structural audit",
+            "structural assessment",
+            "proof checking",
+            "peer review",
+            "renovation",
+            "restoration",
+        ]
+
+        tender_hits = sum(
+            1
+            for indicator in tender_language
+            if indicator in lower
+        )
+
+        if tender_hits:
+            score -= min(
+                60,
+                tender_hits * 20,
+            )
+
+        # --------------------------------------------------
+        # Document sections / administrative content
+        # --------------------------------------------------
+
+        bad_sections = [
+            "scope of work",
+            "eligibility",
+            "instructions",
+            "annexure",
+            "appendix",
+            "corrigendum",
+            "notice inviting",
+            "important dates",
+            "submission",
+            "bid submission",
+            "contact details",
+        ]
+
+        for bad in bad_sections:
+            if bad in lower:
+                score -= 40
+
+        # --------------------------------------------------
+        # Paragraph-like content
+        # --------------------------------------------------
+
+        if len(candidate.split()) > 18:
+            score -= 25
+
+        # --------------------------------------------------
+        # Contact content
+        # --------------------------------------------------
+
+        if re.search(
+            r"\b(email|e-mail|phone|mobile|fax|telephone|"
+            r"www\.|https?://)\b",
+            lower,
+        ):
+            score -= 50
+
+        if "@" in candidate:
+            score -= 50
+            
+        # --------------------------------------------------
+        # Financial / contact value contamination
+        # --------------------------------------------------
+
+        if re.search(
+            r"(?:rs\.?|inr|₹)\s*[\d,]+",
+            lower,
+        ):
+            score -= 50
+
+        if re.search(
+            r"\b\d{6,}\b",
+            lower,
+        ):
+            score -= 20
+
+
+        return score
+
+    # ------------------------------------------------------------------
+
+    def _overlaps_with_title(
+        self,
+        candidate: str,
+        title: str,
+    ) -> bool:
+        """
+        Return True when `candidate` is largely a restatement of the
+        tender `title` (e.g. scope-of-work language mistakenly picked
+        up as an organization name).
+
+        This is a conservative word-overlap heuristic: it only rejects
+        a candidate when most of its own distinct words also appear in
+        the title, which is not something a genuine, distinct
+        organization name would normally exhibit. A short, generic
+        overlap (e.g. sharing only a city name) is not enough to
+        trigger rejection.
+        """
+
+        if not candidate or not title:
+            return False
+
+        candidate_words = set(
+            re.findall(
+                r"[a-z0-9]+",
+                candidate.lower(),
+            )
+        )
+
+        title_words = set(
+            re.findall(
+                r"[a-z0-9]+",
+                title.lower(),
+            )
+        )
+
+        if len(candidate_words) < 2:
+            return False
+
+        overlap = candidate_words & title_words
+
+        ratio = len(overlap) / len(candidate_words)
+
+        return ratio >= 0.6
+
+    # ------------------------------------------------------------------
+
+    def _extract_institution_name(
+        self,
+        lines: List[str],
+        title: str = "",
+    ) -> str:
+        """
+        Conservatively detect a formal issuing institution name.
+
+        A strong institutional keyword alone is not sufficient because
+        tender documents frequently mention institutions such as CPWD,
+        PWD, BMC, MES, etc. inside eligibility criteria, forms, and
+        qualification requirements.
+
+        The candidate must therefore also look like an institution
+        identity rather than ordinary tender prose or an institution list.
+        """
+
+        best_candidate = ""
+        best_score = 0
+
+        address_indicators = (
+            "ground floor",
+            "first floor",
+            "second floor",
+            "third floor",
+            "fourth floor",
+            "fifth floor",
+            "plot no",
+            "plot number",
+            "sector",
+            "sec.",
+            "road",
+            "street",
+            "lane",
+            "avenue",
+            "building",
+            "block",
+            "wing",
+            "estate",
+            "complex",
+            "premises",
+            "pincode",
+            "pin code",
+            "new delhi",
+            "navi mumbai",
+            "mumbai",
+            "gurgaon",
+            "gurugram",
+            "noida",
+        )
+
+        reference_noise = (
+            "other public organisation",
+            "other public organization",
+            "as cpwd",
+            "as pwd",
+            "viz.",
+            "viz ",
+            "etc.",
+            "etc ",
+            "registered with",
+            "registration",
+            "identification number",
+            "copies of",
+            "copy of",
+            "whether registered",
+            "municipal authorities",
+            "government authorities",
+            "numbers of govt",
+            "departments/municipal",
+        )
+
+        for idx, raw_line in enumerate(lines):
+
+            line = raw_line.strip()
+
+            if not line:
+                continue
+
+            if len(line.split()) > 10:
+                continue
+
+            if len(line) > 100:
+                continue
+
+            lower = line.lower()
+
+            if "@" in line:
+                continue
+
+            if re.search(
+                r"https?://|www\.",
+                lower,
+            ):
+                continue
+
+            if re.search(
+                r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+                line,
+            ):
+                continue
+
+            matched_keyword = ""
+
+            for keyword in self.STRONG_INSTITUTION_KEYWORDS:
+
+                if keyword in lower:
+                    matched_keyword = keyword
+                    break
+
+            if not matched_keyword:
+                continue
+
+            if self._overlaps_with_title(line, title):
+                continue
+
+            if any(
+                indicator in lower
+                for indicator in address_indicators
+            ):
+                continue
+
+            # Reject ordinary tender prose where an institution is merely
+            # referenced as an example, registration authority, or member
+            # of a list.
+            if any(
+                marker in lower
+                for marker in reference_noise
+            ):
+                continue
+
+            # A comma-separated list of institutions is normally tender
+            # content, not the issuing organization's identity.
+            if line.count(",") >= 2:
+                continue
+
+            # Abbreviations such as CPWD/AIIMS should only qualify when
+            # presented as a clean identity-like line.
+            if matched_keyword in {"cpwd", "aiims"} and not line.isupper():
+                if line.lower() != matched_keyword:
+                    continue
+
+            # For multi-word institutional names, accept either an
+            # all-uppercase letterhead-style line or a line that starts
+            # with the institutional phrase.
+            if not line.isupper():
+                if not lower.startswith(matched_keyword):
+                    continue
+
+            score = len(matched_keyword)
+
+            if line.isupper():
+                score += 20
+
+            # Slight preference for earlier occurrences.
+            score += max(
+                0,
+                15 - (idx // 5),
+            )
+
+            if score > best_score:
+                best_score = score
+                best_candidate = line
+
+        return best_candidate
+
+
+    def _extract_organization(
+        self,
+        text: str,
+        lines: List[str],
+        title: str = "",
+    ) -> str:
+        """
+        Extract the most likely issuing organization using:
+
+        1. Explicit organization labels.
+        2. Candidate generation from the document header.
+        3. Candidate scoring.
+        4. A full-document scan for known institutional name patterns.
+        5. Hierarchical normalization.
+
+        `title` is used purely for cross-validation: a candidate that
+        is effectively a restatement of the tender title (i.e.
+        scope-of-work language) is rejected even if it otherwise scored
+        well, since a document's scope of work and its issuing
+        organization cannot be the same text.
+        """
+
+        # --------------------------------------------------
+        # Pass 1: Explicit labels
+        # --------------------------------------------------
+
+        for line_index, line in enumerate(lines[:150]):
+
+            lower = line.lower()
+
+            for label in self.ORGANIZATION_LABELS:
+
+                label_pattern = (
+                    rf"\b{re.escape(label)}\b"
+                )
+
+                label_match = re.search(
+                    label_pattern,
+                    lower,
+                )
+
+                if not label_match:
+                    continue
+
+                label_end = label_match.end()
+
+                remainder = line[label_end:]
+
+                has_field_separator = bool(
+                    re.match(
+                        r"\s*[:\-]\s*",
+                        remainder,
+                    )
+                )
+
+                prose_prone_labels = {
+                    "issued by",
+                    "department",
+                    "authority",
+                    "owner",
+                    "employer",
+                    "client",
+                }
+
+                if (
+                    label.lower() in prose_prone_labels
+                    and not has_field_separator
+                ):
+                    continue
+
+                parts = re.split(
+                    rf"\b{re.escape(label)}\b"
+                    r"\s*[:\-]\s*",
+                    line,
+                    flags=re.IGNORECASE,
+                    maxsplit=1,
+                )
+
+                if len(parts) <= 1:
+                    continue
+
+                candidate = (
+                    self._clean_organization_candidate(
+                        parts[1]
+                    )
+                )
+
+                if candidate and self._is_invalid_organization_candidate(
+                    candidate
+                ):
+                    continue
+
+                if candidate:
+                    candidate_score = self._score_organization_candidate(
+                        candidate,
+                        line_index,
+                    )
+
+                candidate_lower = candidate.lower()
+
+                address_indicators = (
+                    "ground floor",
+                    "first floor",
+                    "second floor",
+                    "third floor",
+                    "fourth floor",
+                    "fifth floor",
+                    "plot no",
+                    "plot number",
+                    "sector",
+                    "sec.",
+                    "road",
+                    "street",
+                    "lane",
+                    "avenue",
+                    "building",
+                    "block",
+                    "wing",
+                    "estate",
+                    "complex",
+                    "premises",
+                    "pincode",
+                    "pin code",
+                )
+
+                has_address_noise = any(
+                    indicator in candidate_lower
+                    for indicator in address_indicators
+                )
+
+                has_contact_noise = bool(
+                    re.search(
+                        r"\b(email|e-mail|phone|mobile|fax|telephone|tel)\b",
+                        candidate_lower,
+                    )
+                    or "@" in candidate
+                    or re.search(
+                        r"https?://|www\.",
+                        candidate_lower,
+                    )
+                )
+
+                has_title_overlap = self._overlaps_with_title(
+                    candidate,
+                    title,
+                )
+
+                if (
+                    candidate_score > 0
+                    and not has_address_noise
+                    and not has_contact_noise
+                    and not has_title_overlap
+                ):
+                    return self._normalize_organization(candidate)
+
+        # --------------------------------------------------
+        # Pass 2: Dedicated institutional-name detection
+        # --------------------------------------------------
+
+        institution = self._extract_institution_name(
+            lines,
+            title,
+        )
+
+        if institution:
+            return self._normalize_organization(institution)
+
+        # --------------------------------------------------
+        # Pass 3: Candidate generation and scoring
+        # --------------------------------------------------
+
+        candidates = self._generate_organization_candidates(
+            lines
+        )
+
+        scored = []
+
+        for candidate, idx in candidates:
+
+            candidate = (
+                self._clean_organization_candidate(
+                    candidate
+                )
+            )
+
+            if not candidate:
+                continue
+
+            if self._is_invalid_organization_candidate(candidate):
+                continue
+
+            if self._overlaps_with_title(candidate, title):
+                continue
+
+            score = self._score_organization_candidate(
+                candidate,
+                idx,
+            )
+
+            if score <= 0:
+                continue
+
+            scored.append(
+                (
+                    score,
+                    candidate,
+                )
+            )
+
+        if scored:
+
+            scored.sort(
+                key=lambda item: item[0],
+                reverse=True,
+            )
+
+            return self._normalize_organization(
+                scored[0][1]
+            )
+
+        # --------------------------------------------------
+        # Pass 4: Full-document institutional-name scan
+        # --------------------------------------------------
+
+        institution = self._extract_institution_name(
+            lines,
+            title,
+        )
+
+        if institution:
+            return self._normalize_organization(institution)
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Deadline Extraction
+    # ------------------------------------------------------------------
+
+
+    def _extract_deadline(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Extract and normalize the deadline.
+
+        Priority:
+        1. Dates appearing in deadline-related context.
+        2. Global date fallback.
+
+        Returns:
+            ISO date string: YYYY-MM-DD
+            Empty string if no valid date is found.
+        """
+
+        lines = text.splitlines()
+
+        # --------------------------------------------------
+        # Pass 1: Context-aware search
+        # --------------------------------------------------
+
+        for line in lines:
+
+            lower = line.lower()
+
+            if not any(
+                context in lower
+                for context in self.DEADLINE_CONTEXT
+            ):
+                continue
+
+            for pattern in self.DATE_PATTERNS:
+
+                matches = re.findall(
+                    pattern,
+                    line,
+                )
+
+                for value in matches:
+
+                    parsed = self._normalize_date(
+                        value
+                    )
+
+                    if parsed:
+                        return parsed
+
+        # --------------------------------------------------
+        # Pass 2: Global fallback
+        # --------------------------------------------------
+
+        for pattern in self.DATE_PATTERNS:
+
+            matches = re.findall(
+                pattern,
+                text,
+            )
+
+            for value in matches:
+
+                parsed = self._normalize_date(
+                    value
+                )
+
+                if parsed:
+                    return parsed
+
+        return ""
+
+    def _normalize_date(
+        self,
+        value: str,
+    ) -> Optional[str]:
+        """
+        Normalize supported date formats into ISO format.
+
+        Example:
+            15/07/2026 -> 2026-07-15
+        """
+
+        value = value.strip()
+
+        formats = [
+            "%d/%m/%Y",
+            "%d/%m/%y",
+            "%d-%m-%Y",
+            "%d-%m-%y",
+            "%d.%m.%Y",
+            "%d.%m.%y",
+            "%d %B %Y",
+            "%d %b %Y",
+            "%B %d, %Y",
+            "%b %d, %Y",
+        ]
+
+        for fmt in formats:
+
+            try:
+
+                return datetime.strptime(
+                    value,
+                    fmt,
+                ).strftime("%Y-%m-%d")
+
+            except ValueError:
+                continue
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Location Extraction
+    # ------------------------------------------------------------------
+
+   
+    def _extract_location(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Extract the most likely tender/project location.
+
+        Priority:
+        1. Explicit location labels.
+        2. Explicit project/site/place labels.
+        3. Strong geographic phrases.
+        4. Conservative 'at <place>' heuristic.
+
+        Avoids returning obvious metadata or sentence fragments such as:
+            "The proposal may be submitted"
+            "The work shall be carried out"
+            "The applications are invited"
+
+        Returns:
+            Location string or empty string.
+        """
+
+        lines = text.splitlines()
+
+        # --------------------------------------------------
+        # Common non-location phrases
+        # --------------------------------------------------
+
+        invalid_location_patterns = (
+            "the proposal may be submitted",
+            "the proposal shall be submitted",
+            "the bid may be submitted",
+            "the bid shall be submitted",
+            "applications may be submitted",
+            "applications shall be submitted",
+            "the work may be carried out",
+            "the work shall be carried out",
+            "work may be carried out",
+            "work shall be carried out",
+            "the tender may be submitted",
+            "the tender shall be submitted",
+            "documents may be submitted",
+            "documents shall be submitted",
+        )
+
+        def is_valid_location_candidate(
+            candidate: str,
+        ) -> bool:
+            """
+            Validate a possible location candidate.
+            """
+
+            if not candidate:
+                return False
+
+            candidate = candidate.strip(" .,:;-")
+
+            if not candidate:
+                return False
+
+            if len(candidate) > 150:
+                return False
+
+            lower_candidate = candidate.lower()
+
+            # --------------------------------------------------
+            # Obvious metadata / contact noise
+            # --------------------------------------------------
+
+            if "@" in candidate:
+                return False
+
+            if re.search(
+                r"https?://|www\.",
+                candidate,
+                flags=re.IGNORECASE,
+            ):
+                return False
+
+            if re.search(
+                r"\b(email|e-mail|phone|mobile|fax|"
+                r"telephone|tel)\b",
+                lower_candidate,
+            ):
+                return False
+
+            if re.search(
+                r"\b\d{10,}\b",
+                candidate,
+            ):
+                return False
+
+            # --------------------------------------------------
+            # Obvious sentence fragments
+            # --------------------------------------------------
+
+            if any(
+                phrase in lower_candidate
+                for phrase in invalid_location_patterns
+            ):
+                return False
+
+            # A location should not normally contain a full
+            # sentence with a verb.
+            sentence_verbs = (
+                " submit ",
+                " submitted ",
+                " submitting ",
+                " carry out ",
+                " carried out ",
+                " invited ",
+                " provide ",
+                " provided ",
+                " required ",
+                " shall ",
+                " will ",
+                " should ",
+                " may ",
+                " must ",
+                " include ",
+                " includes ",
+                " undertake ",
+                " undertaken ",
+                " appoint ",
+                " appointed ",
+            )
+
+            padded = f" {lower_candidate} "
+
+            if any(
+                verb in padded
+                for verb in sentence_verbs
+            ):
+                return False
+
+            # --------------------------------------------------
+            # Location candidates should not be paragraph-like.
+            # --------------------------------------------------
+
+            if len(candidate.split()) > 12:
+                return False
+
+            return True
+
+        # --------------------------------------------------
+        # Pass 1: Explicit location labels
+        # --------------------------------------------------
+
+        for line in lines[:150]:
+
+            for label in self.LOCATION_LABELS:
+
+                pattern = (
+                    rf"\b{re.escape(label)}\b"
+                    r"\s*[:\-]\s*(.+)"
+                )
+
+                match = re.search(
+                    pattern,
+                    line,
+                    flags=re.IGNORECASE,
+                )
+
+                if not match:
+                    continue
+
+                candidate = match.group(1).strip()
+
+                candidate = re.sub(
+                    r"\s+",
+                    " ",
+                    candidate,
+                )
+
+                candidate = candidate.strip(" .,:;-")
+
+                if is_valid_location_candidate(candidate):
+                    return candidate
+
+        # --------------------------------------------------
+        # Pass 2: Explicit project/site/place labels
+        # --------------------------------------------------
+
+        explicit_location_labels = (
+            "project location",
+            "project site",
+            "site location",
+            "site",
+            "place",
+            "place of work",
+            "work location",
+            "location of work",
+            "address of site",
+            "office location",
+        )
+
+        for line in lines[:150]:
+
+            for label in explicit_location_labels:
+
+                pattern = (
+                    rf"\b{re.escape(label)}\b"
+                    r"\s*[:\-]\s*(.+)"
+                )
+
+                match = re.search(
+                    pattern,
+                    line,
+                    flags=re.IGNORECASE,
+                )
+
+                if not match:
+                    continue
+
+                candidate = match.group(1).strip()
+
+                candidate = re.sub(
+                    r"\s+",
+                    " ",
+                    candidate,
+                )
+
+                candidate = candidate.strip(" .,:;-")
+
+                if is_valid_location_candidate(candidate):
+                    return candidate
+
+        # --------------------------------------------------
+        # Pass 3: State / UT lookup
+        # --------------------------------------------------
+
+        lower_text = text.lower()
+
+        # Prefer longer state names first.
+        states = sorted(
+            self.INDIAN_STATES_AND_UTS,
+            key=len,
+            reverse=True,
+        )
+
+        for state in states:
+
+            if re.search(
+                rf"\b{re.escape(state)}\b",
+                lower_text,
+            ):
+                return state.title()
+                # --------------------------------------------------
+        # Pass 4: Geographic/address phrase detection
+        # --------------------------------------------------
+        #
+        # Handle documents where the location is embedded in
+        # normal prose rather than introduced by a location label.
+        #
+        # Examples:
+        #   "Sector 13, Nerul (East), Navi Mumbai"
+        #   "CBD Belapur, Navi Mumbai"
+        #   "Navi Mumbai – 400 614"
+        #
+        # This is intentionally conservative so that ordinary
+        # administrative sentences are not returned as locations.
+        # --------------------------------------------------
+
+        geographic_patterns = (
+            # City + PIN
+            r"\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,4})"
+            r"\s*[-–—]?\s*\d{6}\b",
+
+            # Recognizable Indian city followed by nearby locality.
+            r"\b((?:Navi\s+Mumbai|Mumbai|New\s+Delhi|Delhi|"
+            r"Gurgaon|Gurugram|Noida|Ghaziabad|Bengaluru|"
+            r"Bangalore|Hyderabad|Chennai|Kolkata|Pune|"
+            r"Ahmedabad|Jaipur|Lucknow|Kochi|Thiruvananthapuram|"
+            r"Chandigarh|Indore|Bhopal|Nagpur|Surat|Vadodara)"
+            r"(?:\s*[,/-]\s*[A-Z][A-Za-z()]+){0,3})\b",
+
+            # Sector/locality + city.
+            r"\b((?:Sector|Plot|Village|Town|District|"
+            r"Industrial\s+Area|MIDC|Phase)\s+[A-Za-z0-9()\-]+"
+            r"(?:\s*[,/-]\s*[A-Z][A-Za-z()]+){0,4})\b",
+        )
+
+        for pattern in geographic_patterns:
+
+            matches = re.finditer(
+                pattern,
+                text,
+            )
+
+            for match in matches:
+
+                candidate = match.group(1).strip()
+
+                candidate = re.sub(
+                    r"\s+",
+                    " ",
+                    candidate,
+                )
+
+                candidate = candidate.strip(
+                    " .,:;-–—"
+                )
+
+                if not is_valid_location_candidate(
+                    candidate
+                ):
+                    continue
+
+                # Reject obvious non-location fragments.
+                lower_candidate = candidate.lower()
+
+                if any(
+                    token in lower_candidate
+                    for token in (
+                        "state bank",
+                        "government",
+                        "department",
+                        "office",
+                        "estate department",
+                        "ground floor",
+                        "first floor",
+                        "second floor",
+                        "third floor",
+                    )
+                ):
+                    continue
+
+                # A useful geographic candidate should contain
+                # either a known city/locality indicator or a
+                # postal-code-bearing address.
+                if (
+                    re.search(
+                        r"\b\d{6}\b",
+                        candidate,
+                    )
+                    or re.search(
+                        r"\b(navi\s+mumbai|mumbai|new\s+delhi|"
+                        r"delhi|gurgaon|gurugram|noida|ghaziabad|"
+                        r"bengaluru|bangalore|hyderabad|chennai|"
+                        r"kolkata|pune|ahmedabad|jaipur|lucknow|"
+                        r"kochi|chandigarh|indore|bhopal|nagpur|"
+                        r"surat|vadodara)\b",
+                        lower_candidate,
+                    )
+                    or re.search(
+                        r"\b(sector|village|town|district|"
+                        r"industrial\s+area|midc|phase)\b",
+                        lower_candidate,
+                    )
+                ):
+                    return candidate
+        # --------------------------------------------------
+        # Pass 5: Conservative "at <place>" heuristic
+        # --------------------------------------------------
+        #
+        # IMPORTANT:
+        # Do not accept arbitrary prose after "at".
+        #
+        # Example that must NOT match:
+        #
+        #   "The proposal may be submitted at..."
+        #
+        # Instead, only accept candidates that look like
+        # geographic names.
+        # --------------------------------------------------
+
+        at_patterns = (
+            r"\bat\s+"
+            r"([A-Z][A-Za-z]+"
+            r"(?:\s+[A-Z][A-Za-z]+){0,5})"
+            r"(?=\s+(?:for|under|through|by|on|from|"
+            r"to|and)\b|[.,;:]|$)",
+        )
+
+        for pattern in at_patterns:
+
+            matches = re.finditer(
+                pattern,
+                text,
+            )
+
+            for match in matches:
+
+                candidate = match.group(1).strip(" ,.-")
+
+                if not is_valid_location_candidate(candidate):
+                    continue
+
+                # Avoid sentence-like candidates.
+                if len(candidate.split()) > 8:
+                    continue
+                # Reject obvious building/address fragments.
+                location_fragment_patterns = (
+                    r"^\s*[A-Z]\s+Wing\s*$",
+                    r"^\s*(?:Ground|First|Second|Third|Fourth|Fifth)\s+Floor\s*$",
+                    r"^\s*(?:Room|Block|Building|Tower|Floor)\s+(?:No\.?\s*)?\w+\s*$",
+                    r"^\s*(?:C|A|B|D|E|F)\s+Wing\s*$",
+                )
+
+                if any(
+                    re.fullmatch(
+                        pattern,
+                        candidate,
+                        flags=re.IGNORECASE,
+                    )                
+                    for pattern in location_fragment_patterns
+                ):
+                    continue
+                return candidate
+
+        return ""
+    # ------------------------------------------------------------------
+    # Description Extraction
+    # ------------------------------------------------------------------
+
+   
+
+    def _extract_description(
+        self,
+        text: str,
+        lines: List[str],
+    ) -> str:
+        """
+        Extract the most useful description of the opportunity.
+
+        Strategy:
+
+        1. Prefer genuine description/scope sections.
+        2. Reject table-of-contents/index material.
+        3. Ignore page-number/navigation lines.
+        4. Collect meaningful description lines until a new section begins.
+        5. Stop at contact/form metadata.
+        6. Fall back to useful introductory tender content.
+        7. Limit the result to prevent document-wide pollution.
+        """
+
+        lower_lines = [
+            line.lower()
+            for line in lines
+        ]
+
+        # --------------------------------------------------
+        # Helpers
+        # --------------------------------------------------
+
+        def is_index_line(
+            line: str,
+        ) -> bool:
+            """
+            Detect table-of-contents / index style lines.
+
+            Examples:
+                7 Criteria for acceptance of proposals and 7
+                3 Scope of Work 6
+                10 Application format 13 Annexure-B
+            """
+
+            stripped = line.strip()
+
+            if not stripped:
+                return True
+
+            lower = stripped.lower()
+
+            # Explicit index/contents terminology.
+            if lower in (
+                "index",
+                "contents",
+                "table of contents",
+                "table of content",
+            ):
+                return True
+
+            # Typical TOC pattern:
+            #
+            # <number> <heading> <page number>
+            #
+            # Examples:
+            # 3 Scope of Work 6
+            # 7 Criteria for acceptance of proposals and 7
+            #
+            if re.match(
+                r"^\s*\d{1,3}\s+.+\s+\d{1,3}\s*$",
+                stripped,
+            ):
+                return True
+
+            # Page-number + annexure style lines.
+            if re.search(
+                r"\bannexure\s*[-:]?\s*[A-Z0-9]+\b",
+                lower,
+            ) and len(stripped.split()) <= 15:
+                return True
+
+            # Index / table-header labels such as:
+            # "Sl.no. Particulars Page Remark/s"
+            # "Sub Head : Civil Work Sl. No. Description Page No."
+            #
+            # These are column headers for a table of contents or a
+            # bill-of-quantities-style index, not narrative
+            # description content, so they must never be captured as
+            # part of the tender description regardless of internal
+            # spacing/punctuation variations ("Sl.No.", "Sl. No.",
+            # "SlNo", "Page No.", "Page No", ...).
+            if re.search(
+                r"\bsl\.?\s*no\.?\b",
+                lower,
+            ):
+                return True
+
+            if re.search(
+                r"\bpage\s*no\.?\b",
+                lower,
+            ):
+                return True
+
+            if (
+                "particulars" in lower
+                and "page" in lower
+            ):
+                return True
+
+            if "remark/s" in lower:
+                return True
+
+            return False
+
+        def is_metadata_line(
+            line: str,
+        ) -> bool:
+            """
+            Detect obvious administrative/contact/form lines.
+            """
+
+            lower = line.lower().strip()
+
+            if not lower:
+                return True
+
+            if "@" in line:
+                return True
+
+            if re.search(
+                r"https?://|www\.",
+                lower,
+            ):
+                return True
+
+            if re.search(
+                r"\b(email|e-mail|phone|mobile|fax|"
+                r"telephone|contact details)\b",
+                lower,
+            ):
+                return True
+
+            if re.match(
+                r"^(name|address|mobile|phone|"
+                r"telephone|email|e-mail|fax|"
+                r"gst|gstin|pan|signature|"
+                r"designation|place|"
+                r"organization|organisation|"
+                r"contact|"
+                r"tender\s+reference|"
+                r"tender\s+ref|"
+                r"reference\s+number|"
+                r"ref\.?\s*no|"
+                r"location|"
+                r"last\s+date\s+for\s+submission|"
+                r"last\s+date|"
+                r"submission\s+date|"
+                r"tender\s+fee|"
+                r"document\s+fee|"
+                r"emd|"
+                r"earnest\s+money|"
+                r"bid\s+security)\b",
+                lower,
+            ):
+                return True
+
+            return False
+
+        def is_noise_line(
+            line: str,
+        ) -> bool:
+            """
+            Detect lines that are unlikely to be useful
+            tender description content.
+            """
+
+            stripped = line.strip()
+
+            if not stripped:
+                return True
+
+            if is_index_line(stripped):
+                return True
+
+            if is_metadata_line(stripped):
+                return True
+
+            # Isolated page number.
+            if re.fullmatch(
+                r"\d+",
+                stripped,
+            ):
+                return True
+
+            # Very short administrative headings.
+            if (
+                len(stripped.split()) <= 2
+                and len(stripped) < 20
+            ):
+                return True
+
+            return False
+
+        # --------------------------------------------------
+        # Pass 1: Recognized description sections
+        # --------------------------------------------------
+
+        for idx, lower in enumerate(
+            lower_lines
+        ):
+
+            matched_header = None
+
+            for header in self.DESCRIPTION_HEADERS:
+
+                if re.search(
+                    rf"\b{re.escape(header)}\b",
+                    lower,
+                ):
+                    matched_header = header
+                    break
+
+            if not matched_header:
+                continue
+
+            header_line = lines[idx].strip()
+
+            # Never treat an Index/Contents occurrence as a
+            # genuine description section.
+            if is_index_line(header_line):
+                continue
+
+            collected = []
+
+            # --------------------------------------------------
+            # Inline description
+            # --------------------------------------------------
+
+            inline_match = re.search(
+                rf"\b{re.escape(matched_header)}\b"
+                r"\s*[:\-]\s*(.+)",
+                header_line,
+                flags=re.IGNORECASE,
+            )
+
+            if inline_match:
+
+                inline_text = (
+                    inline_match.group(1)
+                    .strip()
+                )
+
+                if (
+                    inline_text
+                    and not is_noise_line(
+                        inline_text
+                    )
+                ):
+                    collected.append(
+                        inline_text
+                    )
+
+            # --------------------------------------------------
+            # Collect following lines
+            # --------------------------------------------------
+
+            for candidate in lines[idx + 1:]:
+
+                candidate = candidate.strip()
+
+                if not candidate:
+                    continue
+
+                lower_candidate = (
+                    candidate.lower()
+                )
+
+                # Do not consume table-of-contents material.
+                if is_index_line(candidate):
+
+                    if collected:
+                        break
+
+                    continue
+
+                # Numbered section headings.
+                if re.match(
+                    r"^\s*\d{1,2}\s*[\.\):\-]\s*[A-Za-z]",
+                    candidate,
+                ):
+
+                    if collected:
+                        break
+
+                    continue
+
+                # New section.
+                if (
+                    collected
+                    and self._is_section_header(
+                        candidate
+                    )
+                ):
+                    break
+
+                # Contact information.
+                if "@" in candidate:
+                    break
+
+                if re.search(
+                    r"\b(email|e-mail|phone|mobile|fax|"
+                    r"telephone|contact|contact details)\b",
+                    lower_candidate,
+                ):
+                    break
+
+                # URLs.
+                if re.search(
+                    r"https?://|www\.",
+                    candidate,
+                    flags=re.IGNORECASE,
+                ):
+                    break
+
+                # Form fields.
+                if re.match(
+                    r"^(name|address|mobile|phone|"
+                    r"telephone|email|e-mail|fax|"
+                    r"gst|gstin|pan|signature|"
+                    r"designation|place|date)\b",
+                    lower_candidate,
+                ):
+                    break
+
+                # Ignore isolated page numbers.
+                if re.fullmatch(
+                    r"\d+",
+                    candidate,
+                ):
+                    continue
+
+                # Ignore obvious index-style noise.
+                if is_noise_line(candidate):
+                    continue
+
+                collected.append(candidate)
+
+                # Safety limit.
+                if len(
+                    " ".join(collected)
+                ) >= 2500:
+                    break
+
+            if collected:
+
+                description = " ".join(
+                    collected
+                )
+
+                description = re.sub(
+                    r"\s+",
+                    " ",
+                    description,
+                ).strip()
+
+                if len(description) >= 20:
+                    return description[:2500]
+
+        # --------------------------------------------------
+        # Pass 2: Introductory tender content
+        # --------------------------------------------------
+
+        intro = []
+
+        # We only inspect the beginning of the document because
+        # genuine tender descriptions normally occur near the
+        # notice/title area.
+        for line in lines[:120]:
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            # Do not use index / contents material.
+            if is_index_line(line):
+                continue
+
+            # Stop after a meaningful section begins, but allow
+            # initial notice text before the section.
+            if self._is_section_header(
+                line
+            ):
+
+                if intro:
+                    break
+
+                continue
+
+            lower = line.lower()
+
+            # Skip metadata.
+            if is_metadata_line(line):
+                continue
+
+            # Skip obvious administrative lines.
+            if re.search(
+                r"\b(name of|signature of|"
+                r"designation|date of issue|"
+                r"place of issue)\b",
+                lower,
+            ):
+                continue
+
+            # Skip page-number-heavy/index-like content.
+            if re.search(
+                r"^\s*\d+\s+.+\s+\d+\s*$",
+                line,
+            ):
+                continue
+
+            # Very short lines are usually headings or fragments.
+            if len(line) < 35:
+                continue
+
+            intro.append(line)
+
+            if len(
+                " ".join(intro)
+            ) >= 1500:
+                break
+
+        description = " ".join(
+            intro
+        )
+
+        description = re.sub(
+            r"\s+",
+            " ",
+            description,
+        ).strip()
+
+        return description[:1500]
+
+    # ------------------------------------------------------------------
+    # Tender Type Extraction
+    # ------------------------------------------------------------------
+
+
+    def _extract_tender_type(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Extract the most specific tender type from the document.
+
+        Priority is given to longer/more specific phrases so that
+        phrases such as 'request for proposal' are matched before
+        the generic word 'proposal' or 'consultant'.
+        """
+
+        lower = text.lower()
+
+        # Longer phrases must be checked first.
+        keywords = sorted(
+            self.TENDER_TYPE_MAP.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        )
+
+        for keyword, tender_type in keywords:
+
+            if re.search(
+                rf"\b{re.escape(keyword)}\b",
+                lower,
+            ):
+                return tender_type
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Money Extraction Helpers
+    # ------------------------------------------------------------------
+
+
+    def _normalize_money(
+        self,
+        value: str,
+    ) -> str:
+        """
+        Normalize extracted monetary values.
+
+        Examples:
+            50,000      -> 50000
+            1,50,000    -> 150000
+            50000.00    -> 50000.00
+        """
+
+        if not value:
+            return ""
+
+        value = value.strip()
+        value = value.replace(",", "")
+
+        return value
+
+    # ------------------------------------------------------------------
+    # EMD Extraction
+    # ------------------------------------------------------------------
+
+    def _extract_emd(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Extract Earnest Money Deposit / Bid Security.
+
+        Supported examples:
+
+            ₹50,000
+            Rs. 50,000/-
+            INR 50000
+            EMD: 50000
+            Earnest Money Deposit: Rs. 1,00,000/-
+
+        The search is context-aware to avoid accidentally returning
+        unrelated monetary values from the document.
+        """
+
+        patterns = [
+
+            # EMD / Earnest Money Deposit.
+            rf"\b(?:emd|e\.m\.d\.)\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+
+            rf"\bearnest\s+money"
+            rf"(?:\s+deposit)?"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+
+            # Bid security.
+            rf"\bbid\s+security\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+        ]
+
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                text,
+                flags=re.IGNORECASE,
+            )
+
+            if not match:
+                continue
+
+            value = match.group(1)
+
+            return self._normalize_money(
+                value
+            )
+
+        # --------------------------------------------------
+        # Fallback: label followed by amount on next line
+        # --------------------------------------------------
+
+        lines = text.splitlines()
+
+        for idx, line in enumerate(lines):
+
+            lower = line.lower()
+
+            if not re.search(
+                r"\b(emd|e\.m\.d\.|earnest\s+money|"
+                r"bid\s+security)\b",
+                lower,
+            ):
+                continue
+
+            nearby = " ".join(
+                lines[idx:idx + 3]
+            )
+
+            match = re.search(
+                self.MONEY_PATTERN,
+                nearby,
+                flags=re.IGNORECASE,
+            )
+
+            if match:
+
+                return self._normalize_money(
+                    match.group(1)
+                )
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Document Fee Extraction
+    # ------------------------------------------------------------------
+
+    def _extract_document_fee(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Extract tender/document/bid fee.
+
+        Supported examples:
+
+            Document Fee: ₹1,500
+            Tender Fee: Rs. 1500/-
+            Cost of Tender Document: INR 500
+            Bid Document Fee: Rs. 2,000
+        """
+
+        patterns = [
+
+            # Document/tender/bid fee.
+            rf"\b(?:document|tender|bid)\s+fee\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+
+            # Cost of tender/bid document.
+            rf"\bcost\s+of\s+"
+            rf"(?:the\s+)?"
+            rf"(?:bid|tender)\s+document\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+
+            # Document cost.
+            rf"\bdocument\s+cost\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+
+            # Tender document price.
+            rf"\b(?:tender|bid)\s+document\s+"
+            rf"(?:price|cost|value)\b"
+            rf"[^.\n:;]{{0,100}}?"
+            rf"{self.MONEY_PATTERN}",
+        ]
+
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                text,
+                flags=re.IGNORECASE,
+            )
+
+            if not match:
+                continue
+
+            return self._normalize_money(
+                match.group(1)
+            )
+
+        # --------------------------------------------------
+        # Fallback: nearby-line extraction
+        # --------------------------------------------------
+
+        lines = text.splitlines()
+
+        for idx, line in enumerate(lines):
+
+            lower = line.lower()
+
+            if not re.search(
+                r"\b(document\s+fee|tender\s+fee|"
+                r"bid\s+fee|document\s+cost|"
+                r"cost\s+of\s+(?:the\s+)?"
+                r"(?:bid|tender)\s+document)\b",
+                lower,
+            ):
+                continue
+
+            nearby = " ".join(
+                lines[idx:idx + 3]
+            )
+
+            match = re.search(
+                self.MONEY_PATTERN,
+                nearby,
+                flags=re.IGNORECASE,
+            )
+
+            if match:
+
+                return self._normalize_money(
+                    match.group(1)
+                )
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Email Extraction
+    # ------------------------------------------------------------------
+
+
+    def _extract_email(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Return the first valid email address found.
+
+        Email extraction is intentionally kept separate from
+        organization/contact parsing because email addresses can
+        appear anywhere in tender documents.
+        """
+
+        matches = self.EMAIL_PATTERN.findall(
+            text
+        )
+
+        for email in matches:
+
+            email = email.strip(
+                ".,;:()[]{}<>"
+            )
+
+            if email:
+
+                return email
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Phone Extraction
+    # ------------------------------------------------------------------
+
+
+    def _extract_phone(
+        self,
+        text: str,
+    ) -> str:
+        """
+        Return the first plausible Indian phone number.
+
+        Supported formats include:
+
+        9876543210
+        +91 9876543210
+        +91-9876543210
+        011-26596851
+        011 26596851
+
+        The extractor intentionally rejects arbitrary numeric sequences
+        such as PIN codes, dates, tender numbers, monetary values and
+        other long numeric identifiers.
+        """
+
+        matches = self.PHONE_PATTERN.findall(text)
+
+        for match in matches:
+
+            value = match.strip()
+
+            digits = re.sub(
+                r"\D",
+                "",
+                value,
+            )
+
+            # --------------------------------------------------
+            # Indian mobile number
+            # --------------------------------------------------
+
+            if len(digits) == 10 and digits[0] in "6789":
+                return value
+
+            # --------------------------------------------------
+            # Indian mobile number with country code
+            # --------------------------------------------------
+
+            if (
+                len(digits) == 12
+                and digits.startswith("91")
+                and digits[2] in "6789"
+            ):    
+                return value
+
+            # --------------------------------------------------
+            # Indian landline with STD code.
+            #
+            # The leading 0 is important here. This prevents
+            # arbitrary 11-digit numeric sequences such as:
+            #
+            #     10773572622
+            #
+            # from being accepted as phone numbers.
+            # --------------------------------------------------
+
+            if (
+                len(digits) in (10, 11)
+                and digits.startswith("0")
+            ):
+                return value
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # Result Validation (evaluation only; no extraction)
+    # ------------------------------------------------------------------
+
+    def _validate_parsed_result(
+        self,
+        parsed: Dict,
+        text: str,
+        lines: List[str],
+    ) -> Dict:
+        """
+        Validate extracted fields.
+
+        This method never performs extraction.
+        It only removes obviously incorrect values that slipped
+        through the extraction phase.
+        """
+
+        validated = parsed.copy()
+
+        # -----------------------------
+        # Validate Title
+        # -----------------------------
+        title = validated.get("title", "").strip()
+
+        if title:
+
+            if self._is_generic_heading(title):
+                validated["title"] = ""
+
+            elif self._looks_like_metadata(title):
+                validated["title"] = ""
+
+            elif len(title) < 8:
+                validated["title"] = ""
+
+            elif len(title.split()) < 3:
+                validated["title"] = ""
+
+            elif len(title) > 250:
+                validated["title"] = ""
+
+        # -----------------------------
+        # Validate Organization
+        # -----------------------------
+        organization = validated.get(
+            "organization",
+            "",
+        ).strip()
+
+        if organization:
+
+            lower = organization.lower()
+
+            if self._looks_like_metadata(organization):
+                validated["organization"] = ""
+
+            elif "@" in organization:
+                validated["organization"] = ""
+
+            elif re.search(
+                r"https?://|www\.",
+                organization,
+                flags=re.IGNORECASE,
+            ):
+                validated["organization"] = ""
+
+            elif re.search(
+                r"\b(?:emd|e\.m\.d\.|"
+                r"document\s+fee|"
+                r"tender\s+fee|"
+                r"bid\s+fee|"
+                r"document\s+cost|"
+                r"earnest\s+money|"
+                r"bid\s+security)\b",
+                lower,
+            ):
+                validated["organization"] = ""
+
+            elif re.search(
+                r"(?:₹|rs\.?|inr)\s*[0-9]",
+                organization,
+                flags=re.IGNORECASE,
+            ):
+                validated["organization"] = ""
+
+            elif len(organization) < 5:
+                validated["organization"] = ""
+
+            elif len(organization) > 220:
+                validated["organization"] = ""
+
+        # -----------------------------
+        # Validate Location
+        # -----------------------------
+        location = validated.get(
+            "location",
+            "",
+        ).strip()
+
+        if location:
+
+            if "@" in location:
+                validated["location"] = ""
+
+            elif re.search(
+                r"https?://|www\.",
+                location,
+                flags=re.IGNORECASE,
+            ):
+                validated["location"] = ""
+
+            elif len(location) > 150:
+                validated["location"] = ""
+
+        # -----------------------------
+        # Validate Description
+        # -----------------------------
+        description = validated.get(
+            "description",
+            "",
+        ).strip()
+
+        if description:
+
+            description = re.sub(
+                r"\s+",
+                " ",
+                description,
+            ).strip()
+
+            if len(description) < 20:
+                description = ""
+
+            validated["description"] = description[:2500]
+
+        # -----------------------------
+        # Validate Email
+        # -----------------------------
+        email = validated.get(
+            "email",
+            "",
+        ).strip()
+
+        if email:
+
+            if not self.EMAIL_PATTERN.fullmatch(email):
+                validated["email"] = ""
+
+        # -----------------------------
+        # Validate Phone
+        # -----------------------------
+        phone = validated.get(
+            "phone",
+            "",
+        ).strip()
+
+        if phone:
+
+            digits = re.sub(
+                r"\D",
+                "",
+                phone,
+            )
+
+            if len(digits) < 10:
+                validated["phone"] = ""
+
+        return validated
+
+    # ------------------------------------------------------------------
+    # Diagnostics Helpers
+    # ------------------------------------------------------------------
+
+    def _compute_confidence(
+        self,
+        diagnostics: Dict,
+    ) -> float:
+        """
+        Compute a lightweight confidence score based on which fields
+        were successfully extracted.
+
+        This score is used only for diagnostics/logging and does not
+        influence extraction behavior or the returned tender fields.
+        """
+
+        weights = {
+            "title_found": 0.35,
+            "organization_found": 0.20,
+            "deadline_found": 0.15,
+            "emd_found": 0.10,
+            "fee_found": 0.05,
+            "contact_found": 0.15,
+        }
+
+        confidence = sum(
+            weight
+            for key, weight in weights.items()
+            if diagnostics.get(key)
+        )
+
+        return round(confidence, 2)
+
+    def _is_expired(
+        self,
+        deadline: str,
+    ) -> bool:
+        """
+        Return True when `deadline` is a valid ISO (YYYY-MM-DD) date
+        that has already passed.
+        """
+
+        if not deadline:
+            return False
+
+        try:
+            deadline_date = datetime.strptime(
+                deadline,
+                "%Y-%m-%d",
+            ).date()
+
+        except ValueError:
+            return False
+
+        return deadline_date < datetime.now().date()
+
+    def _log_parser_diagnostics(
+        self,
+        source_url: str,
+        diagnostics: Dict,
+    ) -> None:
+        """
+        Log a detailed diagnostics block explaining why a document
+        produced an incomplete or low-confidence parse result.
+        """
+
+        logger.warning(
+            "\n"
+            "=====================================================\n"
+            "PARSER DIAGNOSTICS\n"
+            "=====================================================\n"
+            "URL          : %s\n"
+            "Title        : %s\n"
+            "Organization : %s\n"
+            "Deadline     : %s\n"
+            "Tender Type  : %s\n"
+            "Expired      : %s\n"
+            "Confidence   : %.2f\n"
+            "Reasons      : %s\n"
+            "=====================================================",
+            source_url,
+            diagnostics["title_found"],
+            diagnostics["organization_found"],
+            diagnostics["deadline_found"],
+            diagnostics["tender_type"],
+            diagnostics["expired"],
+            diagnostics["confidence"],
+            " | ".join(diagnostics["reasons"]),
+        )
+
+    # ------------------------------------------------------------------
+    # End of TenderParser
+    # ------------------------------------------------------------------

@@ -1,0 +1,15 @@
+[
+  "tests/test_duplicate_detector.py::test_case_insensitive",
+  "tests/test_duplicate_detector.py::test_duplicate_found",
+  "tests/test_duplicate_detector.py::test_duplicate_not_found",
+  "tests/test_hermes_client.py::test_basic_run",
+  "tests/test_hermes_client.py::test_hermes_discovery",
+  "tests/test_hermes_client.py::test_hermes_json_mode",
+  "tests/test_pipeline_storage.py::test_pipeline_transform_and_validate",
+  "tests/test_sheets_transformer.py::test_missing_fields",
+  "tests/test_sheets_transformer.py::test_priority_low",
+  "tests/test_sheets_transformer.py::test_priority_medium",
+  "tests/test_sheets_transformer.py::test_source_url_preserved",
+  "tests/test_sheets_transformer.py::test_transform_multiple",
+  "tests/test_sheets_transformer.py::test_transform_single_opportunity"
+]
