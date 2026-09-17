@@ -14,3 +14,7 @@ service.json
 temp_*.py
 temp_*.pdf
 project_tree.txt
+
+# Local recovery backups
+core/services/tender_parser.py.bak_title_fix
+restore_organization.py
