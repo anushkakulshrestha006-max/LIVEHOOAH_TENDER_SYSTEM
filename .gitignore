@@ -1,7 +1,16 @@
-venv/
+﻿venv/
 __pycache__/
+.pytest_cache/
 *.pyc
+
 config/service_account.json
 logs/
 .env
 service.json
+
+# Development and generated files
+*.bak
+*.backup
+temp_*.py
+temp_*.pdf
+project_tree.txt
