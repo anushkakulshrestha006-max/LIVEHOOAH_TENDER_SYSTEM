@@ -425,10 +425,7 @@ def metadata_score(opportunity):
     filled = sum(
         bool(
             str(
-                opportunity.get(
-                    field,
-                    "",
-                )
+                opportunity.get(field) or ""
             ).strip()
         )
         for field in fields
