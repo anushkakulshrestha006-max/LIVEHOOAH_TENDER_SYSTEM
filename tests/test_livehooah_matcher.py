@@ -532,3 +532,88 @@ def test_metadata_parser_field_names_email_phone():
     score_mapped, reason_mapped = metadata_score(pipeline_mapped_opp)
     # Under current code, contact_email and contact_phone are recognized (4/8)
     assert "4/8 metadata fields populated" in reason_mapped
+
+
+# ==============================================================================
+# 18. NONE VALUES DO NOT CREATE FALSE STRUCTURAL RELEVANCE OR INFLATE SCORE
+# ==============================================================================
+
+def test_none_values_do_not_create_false_structural_match_or_inflate_score():
+    """
+    Verifies that explicit None values across opportunity fields:
+    1. Do not cause the stringified word 'None' / 'none' to match any structural
+       keyword in LIVEHOOAH_CORE or SECONDARY_MATCHES.
+    2. Ensure that an opportunity consisting solely of None fields is rejected
+       with score 0.0 ('No structural relevance detected').
+    3. Ensure that a non-structural opportunity with None fields does not gain
+       relevance or score inflation compared to empty string fields.
+    4. Confirm that an opportunity with explicit None fields yields identical
+       relevance scoring to one with empty string or omitted fields.
+    """
+    # Case A: Entirely None fields - must be rejected with 0.0
+    all_none_opp = {
+        "title": None,
+        "description": None,
+        "summary": None,
+        "location": None,
+        "organization": None,
+        "source": None,
+        "source_url": None,
+        "deadline": None,
+    }
+    score_all_none, reasons_all_none = compute_livehooah_score(all_none_opp)
+    assert score_all_none == 0.0
+    assert reasons_all_none == ["No structural relevance detected"]
+
+    # Case B: Non-structural tender with explicit None fields vs empty string fields
+    non_structural_none = {
+        "title": "Supply of office stationery and computers",
+        "description": None,
+        "summary": None,
+        "location": None,
+        "organization": None,
+        "source": None,
+        "source_url": None,
+        "deadline": None,
+    }
+    non_structural_empty = {
+        "title": "Supply of office stationery and computers",
+        "description": "",
+        "summary": "",
+        "location": "",
+        "organization": "",
+        "source": "",
+        "source_url": "",
+        "deadline": "",
+    }
+    score_ns_none, reasons_ns_none = compute_livehooah_score(non_structural_none)
+    score_ns_empty, reasons_ns_empty = compute_livehooah_score(non_structural_empty)
+    assert score_ns_none == 0.0
+    assert score_ns_empty == 0.0
+    assert reasons_ns_none == reasons_ns_empty == ["No structural relevance detected"]
+
+    # Case C: Valid structural tender with None vs empty fields produces identical score & reasons
+    structural_none = {
+        "title": "Empanelment of Structural Consultants for Building Projects",
+        "description": None,
+        "summary": None,
+        "location": None,
+        "organization": None,
+        "source": None,
+        "source_url": None,
+        "deadline": None,
+    }
+    structural_empty = {
+        "title": "Empanelment of Structural Consultants for Building Projects",
+        "description": "",
+        "summary": "",
+        "location": "",
+        "organization": "",
+        "source": "",
+        "source_url": "",
+        "deadline": "",
+    }
+    score_st_none, reasons_st_none = compute_livehooah_score(structural_none)
+    score_st_empty, reasons_st_empty = compute_livehooah_score(structural_empty)
+    assert score_st_none == score_st_empty
+    assert reasons_st_none == reasons_st_empty
