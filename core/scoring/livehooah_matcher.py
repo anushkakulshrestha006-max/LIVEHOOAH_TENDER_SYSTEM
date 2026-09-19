@@ -417,8 +417,8 @@ def metadata_score(opportunity):
         "deadline",
         "location",
         "description",
-        "contact_email",
-        "contact_phone",
+        "email",
+        "phone",
         "source",
     ]
 

@@ -346,8 +346,8 @@ def test_metadata_completeness_behavior():
         "deadline": "2026-12-31",
         "location": "Location",
         "description": "Description",
-        "contact_email": "email@test.com",
-        "contact_phone": "1234567890",
+        "email": "email@test.com",
+        "phone": "1234567890",
         "source": "gem.gov.in",
     }
     score_full, reason_full = metadata_score(full_opp)
@@ -499,39 +499,27 @@ def test_metadata_score_explicit_none_should_not_count_as_populated():
 
 
 # ==============================================================================
-# 17. PARSER FIELD NAMING DOCUMENTATION TEST (EMAIL/PHONE VS CONTACT_EMAIL/PHONE)
+# 17. PARSER FIELD NAMING REGRESSION TEST (EMAIL/PHONE)
 # ==============================================================================
 
 def test_metadata_parser_field_names_email_phone():
     """
-    Documents current field naming behavior:
-    metadata_score() currently inspects 'contact_email' and 'contact_phone'.
-    TenderParser outputs 'email' and 'phone'.
-
-    This test verifies that under the current implementation, 'email' and 'phone'
-    are NOT counted by metadata_score() unless mapped to 'contact_email' and 'contact_phone'.
+    Verifies that metadata_score() uses the canonical TenderParser field names:
+    'email' and 'phone'.
     """
-    # Raw TenderParser output style (uses 'email' and 'phone')
+
     parser_output_opp = {
         "title": "Structural consultancy",
         "organization": "CPWD",
         "email": "engineer@cpwd.gov.in",
         "phone": "011-12345678",
     }
-    score_raw, reason_raw = metadata_score(parser_output_opp)
-    # Under current code, 'email' and 'phone' are ignored; only title and organization count (2/8)
-    assert "2/8 metadata fields populated" in reason_raw
 
-    # When mapped to 'contact_email' and 'contact_phone'
-    pipeline_mapped_opp = {
-        "title": "Structural consultancy",
-        "organization": "CPWD",
-        "contact_email": "engineer@cpwd.gov.in",
-        "contact_phone": "011-12345678",
-    }
-    score_mapped, reason_mapped = metadata_score(pipeline_mapped_opp)
-    # Under current code, contact_email and contact_phone are recognized (4/8)
-    assert "4/8 metadata fields populated" in reason_mapped
+    score, reason = metadata_score(parser_output_opp)
+
+    # title + organization + email + phone = 4/8
+    assert "4/8 metadata fields populated" in reason
+    assert score == pytest.approx(4 * 0.015)
 
 
 # ==============================================================================
@@ -617,3 +605,4 @@ def test_none_values_do_not_create_false_structural_match_or_inflate_score():
     score_st_empty, reasons_st_empty = compute_livehooah_score(structural_empty)
     assert score_st_none == score_st_empty
     assert reasons_st_none == reasons_st_empty
+
