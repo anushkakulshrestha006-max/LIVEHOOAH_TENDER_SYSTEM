@@ -19,6 +19,20 @@ deduplicator = DeduplicationService()
 
 MIN_LIVEHOOAH_SCORE = 0.60
 
+AUTHORITATIVE_EXTRACTION_FIELDS = {
+    "title",
+    "organization",
+    "deadline",
+    "location",
+    "description",
+    "tender_type",
+    "emd",
+    "document_fee",
+    "email",
+    "phone",
+    "source_url",
+}
+
 
 # =====================================================
 # FINAL GARBAGE FILTER
@@ -547,6 +561,17 @@ def run_pipeline(
                     "title"
                 )
             ):
+
+                if isinstance(opp, dict):
+
+                    for key, value in opp.items():
+
+                        if (
+                            key not in extracted
+                            and key not in AUTHORITATIVE_EXTRACTION_FIELDS
+                        ):
+
+                            extracted[key] = value
 
                 structured.append(
                     extracted
