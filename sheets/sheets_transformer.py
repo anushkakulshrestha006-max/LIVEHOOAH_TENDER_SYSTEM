@@ -19,9 +19,9 @@ def transform_opportunity(opportunity: dict) -> dict:
 
     score = float(opportunity.get("score", 0))
 
-    if score >= 0.80:
+    if score >= 0.70:
         priority = "HIGH"
-    elif score >= 0.55:
+    elif score >= 0.50:
         priority = "MEDIUM"
     else:
         priority = "LOW"

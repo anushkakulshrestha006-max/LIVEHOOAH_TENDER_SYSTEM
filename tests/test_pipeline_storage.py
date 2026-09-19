@@ -9,7 +9,7 @@ def test_pipeline_transform_and_validate():
         "location": "Delhi",
         "source": "GeM",
         "source_url": "https://gem.gov.in/test",
-        "experience_score": 0.91
+        "score": 0.91
     }
 
     transformed = transform_opportunity(

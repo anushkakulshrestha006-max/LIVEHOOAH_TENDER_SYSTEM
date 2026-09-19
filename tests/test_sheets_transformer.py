@@ -12,7 +12,7 @@ def test_transform_single_opportunity():
         "value": "10 Cr",
         "deadline": "2026-07-01",
         "source": "GeM",
-        "experience_score": 0.91
+        "score": 0.91
     }
 
     result = transform_opportunity(opportunity)
@@ -26,7 +26,7 @@ def test_priority_medium():
 
     opportunity = {
         "title": "Bridge Project",
-        "experience_score": 0.60
+        "score": 0.60
     }
 
     result = transform_opportunity(opportunity)
@@ -38,7 +38,7 @@ def test_priority_low():
 
     opportunity = {
         "title": "Drainage Work",
-        "experience_score": 0.30
+        "score": 0.30
     }
 
     result = transform_opportunity(opportunity)
@@ -58,8 +58,8 @@ def test_missing_fields():
 def test_transform_multiple():
 
     opportunities = [
-        {"title": "A", "experience_score": 0.9},
-        {"title": "B", "experience_score": 0.4}
+        {"title": "A", "score": 0.9},
+        {"title": "B", "score": 0.4}
     ]
 
     result = transform_opportunities(opportunities)
@@ -75,7 +75,7 @@ def test_source_url_preserved():
     opportunity = {
         "title": "Road Tender",
         "source_url": "https://gem.gov.in",
-        "experience_score": 0.8
+        "score": 0.8
     }
 
     result = transform_opportunity(opportunity)
