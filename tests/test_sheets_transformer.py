@@ -1,6 +1,7 @@
 from sheets.sheets_transformer import (
     transform_opportunity,
-    transform_opportunities
+    transform_opportunities,
+    to_sheet_format
 )
 
 
@@ -67,9 +68,9 @@ def test_transform_multiple():
     assert len(result) == 2
     assert result[0]["priority"] == "HIGH"
     assert result[1]["priority"] == "LOW"
-    
-    
-    
+
+
+
 def test_source_url_preserved():
 
     opportunity = {
@@ -81,3 +82,32 @@ def test_source_url_preserved():
     result = transform_opportunity(opportunity)
 
     assert result["source_url"] == "https://gem.gov.in"
+
+def test_qualification_reasoning_is_separate_from_matcher_reasoning():
+
+    opportunity = {
+        "title": "Structural Consultancy Tender",
+        "score": 0.85,
+        "reasoning": "MATCHER_REASONING",
+        "qualification_reasoning": "QUALIFICATION_REASONING"
+    }
+
+    result = transform_opportunity(opportunity)
+
+    assert result["reasoning"] == "MATCHER_REASONING"
+    assert result["qualification_reasoning"] == "QUALIFICATION_REASONING"
+
+def test_to_sheet_format_uses_qualification_reasoning():
+
+    opportunity = {
+        "opportunity_id": "OPP-TEST",
+        "title": "Structural Consultancy Tender",
+        "score": 0.85,
+        "reasoning": "MATCHER_REASONING",
+        "qualification_reasoning": "QUALIFICATION_REASONING"
+    }
+
+    result = to_sheet_format(opportunity)
+
+    assert result["Qualification_Reasoning"] == "QUALIFICATION_REASONING"
+    assert result["Qualification_Reasoning"] != "MATCHER_REASONING"

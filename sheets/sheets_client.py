@@ -202,7 +202,7 @@ class SheetsClient:
                 opportunity.get("recommended_action", "")
             ),                                                    # Recommended_Action
             clean_text(
-                opportunity.get("reasoning", "")
+                opportunity.get("qualification_reasoning", "")
             ),                                                    # Qualification_Reasoning
             summary_text,                                         # Summary
             clean_text(

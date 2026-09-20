@@ -116,6 +116,13 @@ def transform_opportunity(opportunity: dict) -> dict:
             )
         ),
 
+        "qualification_reasoning": clean_text(
+            opportunity.get(
+                "qualification_reasoning",
+                ""
+            )
+        ),
+
         "why_selected": why_selected,
 
         "assigned_to": "",
@@ -204,7 +211,10 @@ def to_sheet_format(op: dict) -> dict:
         "Qualified": op.get("qualified", False),
         "Qualification_Score": op.get("qualification_score", 0),
         "Recommended_Action": op.get("recommended_action", ""),
-        "Qualification_Reasoning": op.get("reasoning", ""),
+        "Qualification_Reasoning": op.get(
+            "qualification_reasoning",
+            ""
+        ),
         "Summary": op.get("summary", ""),
         "Assigned_To": op.get("assigned_to", ""),
         "Last_Updated": "",
