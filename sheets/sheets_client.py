@@ -156,15 +156,10 @@ class SheetsClient:
 
         score = float(opportunity.get("score", 0))
 
-        
-
         opportunity_id = (
             opportunity.get("opportunity_id")
             or self.generate_opportunity_id()
             )
-
-        if self._opportunities_cache is not None:
-            self._opportunities_cache.append({})
 
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -222,12 +217,10 @@ class SheetsClient:
         if self._opportunities_cache is not None:
             self._opportunities_cache.append(
                 {
-                "Source_Link": opportunity.get(
-                "source_url",
-                ""
-                )
+                    "Title": opportunity.get("title", ""),
+                    "Source_Link": opportunity.get("source_url", "")
                 }
-    )
+            )
 
         self.log_activity(
             agent="SYSTEM",
