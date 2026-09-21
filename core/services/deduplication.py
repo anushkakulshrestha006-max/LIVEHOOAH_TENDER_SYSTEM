@@ -47,9 +47,10 @@ class DeduplicationService:
             if url:
                 seen_urls.add(url)
 
-            seen_fingerprints.add(
-                self._fingerprint(opportunity)
-            )
+            fingerprint = self._fingerprint(opportunity)
+
+            if fingerprint:
+                seen_fingerprints.add(fingerprint)
 
         print(
             f"Deduplication: {len(opportunities)} -> {len(unique)}"
@@ -80,7 +81,7 @@ class DeduplicationService:
             opportunity
         )
 
-        if fingerprint in seen_fingerprints:
+        if fingerprint and fingerprint in seen_fingerprints:
             return True
 
         title = self._normalize(
@@ -94,6 +95,11 @@ class DeduplicationService:
         deadline = self._normalize(
             opportunity.get("deadline", "")
         )
+
+        # Fuzzy title matching is only reliable when both
+        # organization and deadline are available.
+        if not organization or not deadline:
+            return False
 
         for existing in unique:
 
@@ -144,6 +150,11 @@ class DeduplicationService:
         deadline = self._normalize(
             opportunity.get("deadline", "")
         )
+
+        # Do not treat missing identifying metadata as a
+        # valid fingerprint. URL matching remains available.
+        if not title or not organization or not deadline:
+            return ""
 
         text = (
             title
