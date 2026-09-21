@@ -59,3 +59,23 @@ def test_case_insensitive():
         opportunity,
         existing
     ) is True
+
+
+def test_missing_identifiers_are_not_treated_as_duplicate():
+
+    opportunity = {
+        "title": "",
+        "source_url": ""
+    }
+
+    existing = [
+        {
+            "Title": "",
+            "Source_Link": ""
+        }
+    ]
+
+    assert is_duplicate(
+        opportunity,
+        existing
+    ) is False

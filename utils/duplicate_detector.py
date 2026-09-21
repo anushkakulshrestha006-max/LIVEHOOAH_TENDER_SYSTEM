@@ -22,6 +22,9 @@ def is_duplicate(
     logger.info(f"Incoming URL   : {source_url}")
     logger.info(f"Checking against {len(existing_records)} existing records")
 
+    if not title or not source_url:
+        logger.info("Insufficient identifiers for duplicate check")
+        return False
     for record in existing_records:
 
         existing_title = str(
