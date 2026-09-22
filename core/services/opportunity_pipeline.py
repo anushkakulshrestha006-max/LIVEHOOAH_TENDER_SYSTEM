@@ -1,5 +1,4 @@
 import time
-import uuid
 from datetime import datetime
 
 from utils.logger import logger
@@ -742,16 +741,6 @@ def run_pipeline(
             )
 
             continue
-
-        if not opportunity.get(
-            "opportunity_id"
-        ):
-
-            opportunity[
-                "opportunity_id"
-            ] = str(
-                uuid.uuid4()
-            )
 
         logger.info(
             "Calling SheetsClient.save_opportunity()..."

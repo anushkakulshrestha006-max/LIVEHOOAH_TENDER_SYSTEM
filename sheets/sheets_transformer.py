@@ -1,4 +1,3 @@
-import uuid
 import unicodedata
 
 
@@ -56,7 +55,6 @@ def transform_opportunity(opportunity: dict) -> dict:
 
     return {
 
-        "opportunity_id": str(uuid.uuid4()),
 
         "type": clean_text(
             opportunity.get("tender_type", "")

@@ -55,6 +55,15 @@ def test_missing_fields():
     assert result["location"] == ""
     assert result["score"] == 0
 
+def test_transform_does_not_generate_opportunity_id():
+
+    result = transform_opportunity({
+        "title": "Structural Consultancy Tender",
+        "score": 0.80
+    })
+
+    assert "opportunity_id" not in result
+
 
 def test_transform_multiple():
 

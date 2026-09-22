@@ -44,6 +44,7 @@ def test_save_opportunity_updates_cache_with_saved_record_once(monkeypatch):
     result = client.save_opportunity(opportunity)
 
     assert result["status"] == "saved"
+    assert result["opportunity_id"] == "OPP-000002"
     assert len(client._opportunities_cache) == 2
 
     saved_record = client._opportunities_cache[-1]
