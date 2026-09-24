@@ -120,6 +120,54 @@ def test_discovery_metadata_handoff_to_structured_extraction():
     )
 
 
+def test_run_pipeline_extraction_failure_returns_no_structured_tenders():
+    query = "structural audit consultancy"
+    candidate_url = "https://example.gov.in/tenders/tender-extraction-fail-202.html"
+    candidate_opportunity = {
+        "title": "Discovery Candidate Without Usable Extraction",
+        "source_url": candidate_url,
+    }
+
+    with patch(
+        "core.services.opportunity_pipeline.run_tender_discovery"
+    ) as mock_discovery, patch(
+        "core.services.opportunity_pipeline.engine.extract"
+    ) as mock_extract, patch(
+        "core.services.opportunity_pipeline.time.sleep"
+    ) as mock_sleep, patch(
+        "core.services.opportunity_pipeline.deduplicator.deduplicate"
+    ) as mock_deduplicate:
+
+        mock_discovery.return_value = {
+            "status": "success",
+            "opportunities": [candidate_opportunity],
+        }
+        mock_extract.return_value = {}
+
+        result = run_pipeline(query)
+
+    # Discovery succeeded on first attempt, so no retry occurs
+    mock_discovery.assert_called_once_with(query)
+    mock_sleep.assert_not_called()
+
+    # Engine extract was called once with candidate source_url
+    mock_extract.assert_called_once_with(candidate_url)
+
+    # Deduplicator must NOT be called when extraction yields no structured records
+    mock_deduplicate.assert_not_called()
+
+    # Assert returned meta fields
+    meta = result["meta"]
+    assert meta["total_found"] == 0
+    assert meta["saved"] == 0
+    assert meta["duplicates"] == 0
+    assert meta["failed"] == 1
+    assert meta["note"] == "No structured tenders"
+
+    # Assert returned opportunities is empty
+    assert result["opportunities"] == []
+
+
 if __name__ == "__main__":
     test_discovery_metadata_handoff_to_structured_extraction()
     print("PASS: test_discovery_metadata_handoff_to_structured_extraction")
