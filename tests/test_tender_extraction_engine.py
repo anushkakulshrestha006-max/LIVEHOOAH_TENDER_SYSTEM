@@ -1,8 +1,251 @@
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 from core.services.tender_extraction_engine import (
     TenderExtractionEngine,
 )
+
+
+# ==============================================================================
+# PYTEST SUITE: PUBLIC CONTRACT COVERAGE FOR TenderExtractionEngine.extract()
+# ==============================================================================
+
+
+def test_extract_html_success():
+    engine = TenderExtractionEngine()
+
+    raw_url = "https://example.com/portal/notice?id=101"
+    resolved_url = "https://example.com/tenders/tender-101.html"
+    assert resolved_url != raw_url
+
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = resolved_url
+
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": "<html><body><h1>Tender Document</h1></body></html>",
+        "content_type": "text/html",
+    }
+
+    html_text = (
+        "Notice Inviting Tender for architectural and structural consultancy services. "
+        "Detailed scope of work, technical bid qualification criteria, and submission requirements."
+    )
+    assert len(html_text) >= 120
+    engine.html_extractor.extract_text = MagicMock(return_value=html_text)
+    engine.cleaner.clean = MagicMock(side_effect=lambda text: text)
+
+    mock_tender = {
+        "title": "Architectural and Structural Consultancy Tender",
+        "organization": "Public Works Department",
+        "deadline": "2026-12-31",
+        "location": "New Delhi",
+    }
+    engine.parser.parse = MagicMock(return_value=mock_tender)
+
+    result = engine.extract(raw_url)
+
+    assert isinstance(result, dict)
+    assert result != {}
+    assert result["source_url"] == resolved_url
+    assert result["title"] == "Architectural and Structural Consultancy Tender"
+
+
+def test_extract_pdf_routing_success():
+    engine = TenderExtractionEngine()
+
+    resolved_url = "https://example.com/documents/tender-202.pdf"
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = resolved_url
+
+    pdf_bytes = b"%PDF-1.4 simulated pdf stream"
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": pdf_bytes,
+        "content_type": "application/pdf",
+    }
+
+    pdf_text = (
+        "Request for proposal for empanelment of structural engineering consultants. "
+        "Submissions must include technical bid documentation and comprehensive scope of work."
+    )
+    assert len(pdf_text) >= 120
+    engine.pdf_extractor.extract_text = MagicMock(return_value=pdf_text)
+    engine.html_extractor.extract_text = MagicMock()
+    engine.cleaner.clean = MagicMock(side_effect=lambda text: text)
+
+    mock_tender = {
+        "title": "Empanelment of Structural Engineering Consultants RFP",
+        "organization": "State Infrastructure Board",
+        "deadline": "2026-11-30",
+    }
+    engine.parser.parse = MagicMock(return_value=mock_tender)
+
+    result = engine.extract(resolved_url)
+
+    assert isinstance(result, dict)
+    assert result != {}
+    assert result["title"] == "Empanelment of Structural Engineering Consultants RFP"
+    assert result["source_url"] == resolved_url
+    engine.pdf_extractor.extract_text.assert_called_once_with(pdf_bytes)
+    engine.html_extractor.extract_text.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "raw_url,resolver_mock,fetcher_mock",
+    [
+        ("", None, None),
+        ("   ", None, None),
+        ("javascript:void(0)", None, None),
+        (
+            "https://example.com/tender",
+            MagicMock(side_effect=RuntimeError("DNS resolution failed")),
+            None,
+        ),
+        (
+            "https://example.com/tender",
+            MagicMock(return_value=""),
+            None,
+        ),
+        (
+            "https://example.com/tender",
+            MagicMock(return_value="https://example.com/tender"),
+            MagicMock(side_effect=ConnectionError("Fetch connection error")),
+        ),
+        (
+            "https://example.com/tender",
+            MagicMock(return_value="https://example.com/tender"),
+            MagicMock(return_value={"success": False, "status_code": 404}),
+        ),
+        (
+            "https://example.com/tender",
+            MagicMock(return_value="https://example.com/tender"),
+            MagicMock(return_value={"success": True, "content": ""}),
+        ),
+    ],
+)
+def test_extract_input_resolution_fetch_failures(raw_url, resolver_mock, fetcher_mock):
+    engine = TenderExtractionEngine()
+    if resolver_mock is not None:
+        engine.resolver.resolve = resolver_mock
+    if fetcher_mock is not None:
+        engine.fetcher.fetch = fetcher_mock
+
+    result = engine.extract(raw_url)
+
+    assert result == {}
+
+
+@pytest.mark.parametrize(
+    "extractor_mock,cleaner_mock",
+    [
+        (MagicMock(side_effect=RuntimeError("Extraction crashed")), MagicMock()),
+        (MagicMock(return_value=None), MagicMock()),
+        (
+            MagicMock(return_value="Extracted text that would otherwise be valid"),
+            MagicMock(side_effect=RuntimeError("Cleaning crashed")),
+        ),
+        (
+            MagicMock(return_value="Extracted text that would otherwise be valid"),
+            MagicMock(return_value=12345),
+        ),
+    ],
+)
+def test_extract_extraction_cleaning_failures(extractor_mock, cleaner_mock):
+    engine = TenderExtractionEngine()
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = "https://example.com/tender.html"
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": "<html><body>Tender notice</body></html>",
+        "content_type": "text/html",
+    }
+    engine.html_extractor.extract_text = extractor_mock
+    engine.cleaner.clean = cleaner_mock
+
+    result = engine.extract("https://example.com/tender.html")
+
+    assert result == {}
+
+
+@pytest.mark.parametrize(
+    "invalid_text",
+    [
+        # Shorter than MIN_TEXT_LENGTH (120 characters)
+        "Short tender notice for bid submission.",
+        # Sufficiently long (>= 120 characters) with no tender signals
+        (
+            "Welcome to the annual community sports day and cultural festival. "
+            "All neighborhood residents, families, and visitors are invited to attend "
+            "the weekend activities including games, music, food stalls, and presentations."
+        ),
+    ],
+)
+def test_extract_document_validation_rejection(invalid_text):
+    engine = TenderExtractionEngine()
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = "https://example.com/notice.html"
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": "<html><body>content</body></html>",
+        "content_type": "text/html",
+    }
+    engine.html_extractor.extract_text = MagicMock(return_value=invalid_text)
+    engine.cleaner.clean = MagicMock(side_effect=lambda text: text)
+    engine.parser.parse = MagicMock()
+
+    result = engine.extract("https://example.com/notice.html")
+
+    assert result == {}
+    engine.parser.parse.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "parser_result,parser_exc",
+    [
+        (None, RuntimeError("Parser internal error")),
+        (["invalid", "result", "type"], None),
+        ({}, None),
+        ({"title": "Too short"}, None),
+    ],
+)
+def test_extract_parser_structured_result_rejections(parser_result, parser_exc):
+    engine = TenderExtractionEngine()
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = "https://example.com/tender.html"
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": "<html><body>Tender notice</body></html>",
+        "content_type": "text/html",
+    }
+    valid_text = (
+        "Notice Inviting Tender for architectural and engineering consultancy services. "
+        "Detailed scope of work, technical bid criteria, and submission instructions."
+    )
+    engine.html_extractor.extract_text = MagicMock(return_value=valid_text)
+    engine.cleaner.clean = MagicMock(side_effect=lambda text: text)
+
+    if parser_exc is not None:
+        engine.parser.parse = MagicMock(side_effect=parser_exc)
+    else:
+        engine.parser.parse = MagicMock(return_value=parser_result)
+
+    result = engine.extract("https://example.com/tender.html")
+
+    assert result == {}
+
+
+# ==============================================================================
+# EXISTING BENCHMARK SCRIPT (PRESERVED UNCHANGED)
+# ==============================================================================
+
 
 
 PDF_PATH = Path(
