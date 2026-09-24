@@ -167,6 +167,113 @@ def test_run_pipeline_extraction_failure_returns_no_structured_tenders():
     # Assert returned opportunities is empty
     assert result["opportunities"] == []
 
+def test_run_pipeline_qualifies_transforms_and_saves_qualified_opportunity():
+    query = "structural consultancy tender"
+
+    discovery_candidate = {
+        "title": "Discovery Candidate",
+        "source_url": "https://example.gov.in/tenders/pipeline-qualification-303.html",
+    }
+
+    extracted_opportunity = {
+        "title": "Notice Inviting Tender for Structural Consultancy",
+        "organization": "Central Public Works Department",
+        "deadline": "2099-12-31",
+        "location": "New Delhi",
+        "description": "Structural consultancy services for building works.",
+        "tender_type": "Notice Inviting Tender",
+        "source_url": discovery_candidate["source_url"],
+    }
+
+    with patch(
+        "core.services.opportunity_pipeline.run_tender_discovery"
+    ) as mock_discovery, patch(
+        "core.services.opportunity_pipeline.engine.extract"
+    ) as mock_extract, patch(
+        "core.services.opportunity_pipeline.deduplicator.deduplicate"
+    ) as mock_deduplicate, patch(
+        "core.services.opportunity_pipeline.compute_livehooah_score"
+    ) as mock_score, patch(
+        "core.services.opportunity_pipeline.qualify_opportunity"
+    ) as mock_qualify, patch(
+        "core.services.opportunity_pipeline.SheetsClient"
+    ) as mock_sheets_cls:
+
+        mock_discovery.return_value = {
+            "status": "success",
+            "opportunities": [discovery_candidate],
+        }
+
+        mock_extract.return_value = extracted_opportunity
+        mock_deduplicate.return_value = [extracted_opportunity]
+
+        mock_score.return_value = (
+            0.85,
+            ["MATCHER_REASONING"],
+        )
+
+        mock_qualify.return_value = (
+            True,
+            ["QUALIFICATION_REASONING"],
+        )
+
+        mock_client = MagicMock()
+        mock_client.save_opportunity.return_value = {
+            "status": "saved",
+            "opportunity_id": "OPP-TEST-303",
+        }
+        mock_sheets_cls.return_value = mock_client
+
+        result = run_pipeline(query)
+
+    mock_discovery.assert_called_once_with(query)
+    mock_extract.assert_called_once_with(
+        discovery_candidate["source_url"]
+    )
+    mock_deduplicate.assert_called_once_with(
+        [extracted_opportunity]
+    )
+    mock_score.assert_called_once_with(
+        extracted_opportunity
+    )
+    mock_qualify.assert_called_once_with(
+        extracted_opportunity
+    )
+
+    mock_client.save_opportunity.assert_called_once()
+
+    saved_opportunity = (
+        mock_client.save_opportunity.call_args.args[0]
+    )
+
+    assert saved_opportunity["score"] == 0.85
+    assert saved_opportunity["reasoning"] == "MATCHER_REASONING"
+    assert (
+        saved_opportunity["qualification_status"]
+        == "QUALIFIED"
+    )
+    assert (
+        saved_opportunity["qualification_reasoning"]
+        == "QUALIFICATION_REASONING"
+    )
+    assert saved_opportunity["qualified"] is True
+
+    assert result["meta"]["total_found"] == 1
+    assert result["meta"]["saved"] == 1
+    assert result["meta"]["duplicates"] == 0
+    assert result["meta"]["failed"] == 0
+
+    assert len(result["opportunities"]) == 1
+
+    transformed = result["opportunities"][0]
+
+    assert transformed["title"] == extracted_opportunity["title"]
+    assert transformed["qualification_status"] == "QUALIFIED"
+    assert (
+        transformed["qualification_reasoning"]
+        == "QUALIFICATION_REASONING"
+    )
+
 
 if __name__ == "__main__":
     test_discovery_metadata_handoff_to_structured_extraction()
