@@ -1084,10 +1084,11 @@ class TenderIntelligence:
             for pattern in informational_patterns
         )
     
-        # HARD NEGATIVE REJECTION
+        # NEGATIVE-SIGNAL DOMINANCE
         # ------------------------------------------------------
         #
-        # Negative service/infrastructure signals override
+        # Negative service/infrastructure signals have already
+        # been rejected above when they equal or outweigh
         # positive structural keyword matches.
         # ------------------------------------------------------
     
@@ -1098,12 +1099,6 @@ class TenderIntelligence:
             rejection_reason = (
                 "Rejected informational/directory/listing page."
             )
- 
-        elif negative_score > 0:
-
-            confidence = 0.0
-            is_relevant = False
-            rejection_reason = ""
 
         else:
 
@@ -1149,3 +1144,4 @@ class TenderIntelligence:
                 2,
             ),
         }
+
