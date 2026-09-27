@@ -203,3 +203,48 @@ def test_save_opportunity_preserves_supplied_opportunity_id(monkeypatch):
     }
 
     assert captured["row"][0] == "OPP-000123"
+
+
+def test_save_opportunity_row_matches_locked_schema_length(monkeypatch):
+
+    from config.constants import OPPORTUNITY_HEADERS
+
+    client = SheetsClient.__new__(SheetsClient)
+
+    client._opportunities_cache = []
+
+    opportunity = {
+        "title": "Structural Consultancy Tender",
+        "source_url": "https://example.com/schema-test",
+        "score": 0.80,
+    }
+
+    monkeypatch.setattr(
+        client,
+        "opportunity_exists",
+        lambda opportunity: False
+    )
+
+    monkeypatch.setattr(
+        client,
+        "generate_opportunity_id",
+        lambda: "OPP-000001"
+    )
+
+    captured = {}
+
+    def capture_append(sheet_name, row):
+        captured["sheet_name"] = sheet_name
+        captured["row"] = row
+
+    monkeypatch.setattr(client, "append_record", capture_append)
+
+    monkeypatch.setattr(
+        client,
+        "log_activity",
+        lambda **kwargs: None
+    )
+
+    client.save_opportunity(opportunity)
+
+    assert len(captured["row"]) == len(OPPORTUNITY_HEADERS)
