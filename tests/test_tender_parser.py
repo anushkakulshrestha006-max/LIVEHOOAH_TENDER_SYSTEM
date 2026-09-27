@@ -62,3 +62,19 @@ def test_location_extracts_explicit_state_label():
     result = parser.parse(text)
 
     assert result["location"] == "Haryana"
+
+
+def test_deadline_extracts_iso_date():
+    parser = TenderParser()
+
+    text = """
+    NOTICE INVITING TENDER
+
+    Appointment of Structural Consultant for Commercial Building
+
+    Last Date: 2026-10-15
+    """
+
+    result = parser.parse(text)
+
+    assert result["deadline"] == "2026-10-15"

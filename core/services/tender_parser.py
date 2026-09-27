@@ -141,6 +141,7 @@ class TenderParser:
     # ------------------------------------------------------------------
 
     DATE_PATTERNS = [
+        r"\b\d{4}-\d{1,2}-\d{1,2}\b",
         r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
         r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b",
         r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b",
@@ -3089,6 +3090,7 @@ class TenderParser:
         value = value.strip()
 
         formats = [
+            "%Y-%m-%d",
             "%d/%m/%Y",
             "%d/%m/%y",
             "%d-%m-%Y",
