@@ -191,3 +191,56 @@ def test_search_rejects_irrelevant_candidates_before_intelligence():
 
     assert result == []
 
+
+
+
+def test_search_router_initializes_scraper_when_serp_is_unavailable(monkeypatch):
+    from core.services import search_router
+
+    class FailingSerpSearch:
+        def __init__(self):
+            raise ValueError("SERPAPI_KEY not found in environment")
+
+    class FakeScraperSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/123",
+                }
+            ]
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    monkeypatch.setattr(
+        search_router,
+        "SerpSearch",
+        FailingSerpSearch,
+    )
+    monkeypatch.setattr(
+        search_router,
+        "ScraperSearch",
+        FakeScraperSearch,
+    )
+    monkeypatch.setattr(
+        search_router,
+        "TenderIntelligence",
+        FakeIntelligence,
+    )
+
+    router = search_router.SearchRouter()
+
+    assert isinstance(router.scraper_search, FakeScraperSearch)
+    assert isinstance(router.intelligence, FakeIntelligence)
+
+    result = router.search("structural consultancy tender")
+
+    assert len(result) == 1
+    assert result[0]["discovery_source"] == "scraper"
+    assert result[0]["source_url"] == "https://example.gov.in/tender/123"
+    assert result[0]["intelligence"]["is_relevant"] is True

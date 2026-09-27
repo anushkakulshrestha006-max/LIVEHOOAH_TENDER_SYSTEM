@@ -241,7 +241,14 @@ class SearchRouter:
 
     def __init__(self):
 
-        self.serp_search = SerpSearch()
+        try:
+            self.serp_search = SerpSearch()
+        except Exception:
+            logger.exception(
+                "SERP backend unavailable during initialization"
+            )
+            self.serp_search = None
+
         self.scraper_search = ScraperSearch()
         self.intelligence = TenderIntelligence()
 
@@ -569,27 +576,29 @@ class SearchRouter:
         # SERP SEARCH
         # ==================================================
 
-        try:
+        if self.serp_search is not None:
 
-            results = self.serp_search.search(
-                query
-            )
+            try:
 
-            if results:
-
-                for result in results:
-                    result.setdefault("discovery_source", "serp")
-
-                opportunities.extend(
-                    results
+                results = self.serp_search.search(
+                    query
                 )
 
-        except Exception:
+                if results:
 
-            logger.exception(
-                "SERP search failed | query=%s",
-                query,
-            )
+                    for result in results:
+                        result.setdefault("discovery_source", "serp")
+
+                    opportunities.extend(
+                        results
+                    )
+
+            except Exception:
+
+                logger.exception(
+                    "SERP search failed | query=%s",
+                    query,
+                )
 
         # ==================================================
         # SCRAPER SEARCH
