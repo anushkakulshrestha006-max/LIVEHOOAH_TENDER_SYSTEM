@@ -212,3 +212,29 @@ def test_short_tender_specific_semantic_root_is_preserved():
     assert "Tender Notice" in text
     assert "Structural consultancy bid deadline" in text
     assert "unrelated fallback content" not in text
+
+
+def test_extract_text_preserves_tender_content_inside_form():
+    extractor = HTMLExtractor()
+
+    html = b"""
+    <html>
+    <body>
+        <form id="tenderDetails">
+            <h1>Notice Inviting Tender</h1>
+            <p>
+                Structural consultancy services for assessment of buildings.
+            </p>
+            <p>Deadline: 30 September 2026</p>
+            <p>EMD: 175396</p>
+        </form>
+    </body>
+    </html>
+    """
+
+    text = extractor.extract_text(html)
+
+    assert "Notice Inviting Tender" in text
+    assert "Structural consultancy services" in text
+    assert "Deadline: 30 September 2026" in text
+    assert "EMD: 175396" in text

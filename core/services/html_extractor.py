@@ -43,7 +43,6 @@ class HTMLExtractor:
         "footer",
         "nav",
         "aside",
-        "form",
     )
 
     REMOVABLE_KEYWORDS = {
