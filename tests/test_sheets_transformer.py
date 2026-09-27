@@ -120,3 +120,16 @@ def test_to_sheet_format_uses_qualification_reasoning():
 
     assert result["Qualification_Reasoning"] == "QUALIFICATION_REASONING"
     assert result["Qualification_Reasoning"] != "MATCHER_REASONING"
+
+
+def test_to_sheet_format_matches_locked_opportunity_schema():
+
+    from config.constants import OPPORTUNITY_HEADERS
+
+    opportunity = {
+        "opportunity_id": "OPP-000001"
+    }
+
+    result = to_sheet_format(opportunity)
+
+    assert list(result.keys()) == OPPORTUNITY_HEADERS
