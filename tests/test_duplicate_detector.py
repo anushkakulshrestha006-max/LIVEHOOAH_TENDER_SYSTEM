@@ -79,3 +79,43 @@ def test_missing_identifiers_are_not_treated_as_duplicate():
         opportunity,
         existing
     ) is False
+
+
+def test_same_title_with_different_url_is_not_duplicate():
+
+    opportunity = {
+        "title": "Structural Consultancy Tender",
+        "source_url": "https://example.com/tender-a"
+    }
+
+    existing = [
+        {
+            "Title": "Structural Consultancy Tender",
+            "Source_Link": "https://example.com/tender-b"
+        }
+    ]
+
+    assert is_duplicate(
+        opportunity,
+        existing
+    ) is False
+
+
+def test_same_url_with_different_title_is_not_duplicate():
+
+    opportunity = {
+        "title": "Structural Consultancy Tender A",
+        "source_url": "https://example.com/tender"
+    }
+
+    existing = [
+        {
+            "Title": "Structural Consultancy Tender B",
+            "Source_Link": "https://example.com/tender"
+        }
+    ]
+
+    assert is_duplicate(
+        opportunity,
+        existing
+    ) is False
