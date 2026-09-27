@@ -1,50 +1,26 @@
-from core.services.tender_parser import TenderParser
+﻿from core.services.tender_parser import TenderParser
 
 
-def main():
+def test_title_does_not_absorb_institutional_organization():
     parser = TenderParser()
 
-    sample_text = """
-    KERALA INDUSTRIAL INFRASTRUCTURE DEVELOPMENT CORPORATION
-
+    text = """
     NOTICE INVITING TENDER
 
-    Appointment of Structural Consultant for Structural Audit
-    and Engineering Consultancy Services for Industrial Buildings
+    Empanelment of Structural Engineers for Consultancy Services
 
-    Organization: Kerala Industrial Infrastructure Development Corporation
-    Tender Reference: KINFRA/SC/2026/001
-    Location: Kochi, Kerala
+    INDIAN INSTITUTE OF TECHNOLOGY DELHI
 
-    Scope of Work:
-    The consultant shall carry out structural audit, structural assessment,
-    structural analysis, structural design, proof checking and related
-    engineering consultancy services for industrial buildings.
+    HAUZ KHAS, NEW DELHI
 
-    Last Date for Submission: 15/09/2026
-
-    Tender Fee: Rs. 5,000/-
-    EMD: Rs. 1,00,000/-
-
-    Contact:
-    Email: tenders@kinfra.org
-    Phone: +91 9876543210
+    Last Date: 15/09/2026
     """
 
-    result = parser.parse(
-        sample_text,
-        source_url="https://example.com/tender.pdf",
+    result = parser.parse(text)
+
+    assert result["title"] == (
+        "Empanelment of Structural Engineers for Consultancy Services"
     )
-
-    print("\n" + "=" * 80)
-    print("TENDER PARSER TEST")
-    print("=" * 80)
-
-    for key, value in result.items():
-        print(f"{key:20}: {value}")
-
-    print("=" * 80)
-
-
-if __name__ == "__main__":
-    main()
+    assert result["organization"] == (
+        "INDIAN INSTITUTE OF TECHNOLOGY DELHI"
+    )

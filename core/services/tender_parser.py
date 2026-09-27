@@ -1272,6 +1272,16 @@ class TenderParser:
 
         lower = line.lower().strip()
 
+        # Stop title extension before formal institution identity lines.
+        # Reuse the parser's existing high-precision institution vocabulary,
+        # while avoiding ordinary title prose that merely mentions one.
+        for keyword in self.STRONG_INSTITUTION_KEYWORDS:
+            if keyword not in lower:
+                continue
+
+            if line.isupper() or lower.startswith(keyword):
+                return True
+
         authority_patterns = [
             r"^government\s+of\b",
             r"^govt\.?\s+of\b",
