@@ -3272,9 +3272,15 @@ class TenderParser:
 
             for label in self.LOCATION_LABELS:
 
+                separator = (
+                    r"\s*:\s*"
+                    if label.lower() == "state"
+                    else r"\s*[:\-]\s*"
+                )
+
                 pattern = (
                     rf"\b{re.escape(label)}\b"
-                    r"\s*[:\-]\s*(.+)"
+                    rf"{separator}(.+)"
                 )
 
                 match = re.search(
