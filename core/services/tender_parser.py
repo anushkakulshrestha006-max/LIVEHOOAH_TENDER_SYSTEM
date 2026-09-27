@@ -4072,6 +4072,11 @@ class TenderParser:
 
         patterns = [
 
+            # Plain numeric amount after an explicit EMD label.
+            r"\b(?:emd|e\.m\.d\.)\b\s*:\s*"
+            r"([0-9][0-9,]*(?:\.\d{1,2})?)"
+            r"(?:\s*/-)?",
+
             # EMD / Earnest Money Deposit.
             rf"\b(?:emd|e\.m\.d\.)\b"
             rf"[^.\n:;]{{0,100}}?"
@@ -4160,6 +4165,11 @@ class TenderParser:
         """
 
         patterns = [
+
+            # Plain numeric amount after an explicit fee label.
+            r"\b(?:document|tender|bid)\s+fee\b\s*:\s*"
+            r"([0-9][0-9,]*(?:\.\d{1,2})?)"
+            r"(?:\s*/-)?",
 
             # Document/tender/bid fee.
             rf"\b(?:document|tender|bid)\s+fee\b"

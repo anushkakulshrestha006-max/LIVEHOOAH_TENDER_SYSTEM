@@ -78,3 +78,39 @@ def test_deadline_extracts_iso_date():
     result = parser.parse(text)
 
     assert result["deadline"] == "2026-10-15"
+
+
+def test_emd_extracts_plain_numeric_amount_after_explicit_label():
+    parser = TenderParser()
+
+    text = """
+    NOTICE INVITING TENDER
+
+    Structural Audit and Consultancy Services
+
+    Last Date: 15/10/2026
+
+    EMD: 175396
+    """
+
+    result = parser.parse(text)
+
+    assert result["emd"] == "175396"
+
+
+def test_document_fee_extracts_plain_numeric_amount_after_explicit_label():
+    parser = TenderParser()
+
+    text = """
+    NOTICE INVITING TENDER
+
+    Structural Audit and Consultancy Services
+
+    Last Date: 15/10/2026
+
+    Document Fee: 1500
+    """
+
+    result = parser.parse(text)
+
+    assert result["document_fee"] == "1500"
