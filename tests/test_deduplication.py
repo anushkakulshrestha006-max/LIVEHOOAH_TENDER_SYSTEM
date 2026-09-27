@@ -114,3 +114,26 @@ def test_missing_metadata_is_preserved():
     result = service.deduplicate(opportunities)
 
     assert len(result) == 2
+
+
+def test_same_title_and_organization_with_different_deadline_is_preserved():
+    service = DeduplicationService()
+
+    opportunities = [
+        {
+            "title": "Structural Audit of Campus Buildings",
+            "organization": "IIT Delhi",
+            "deadline": "2026-10-01",
+            "source_url": "https://example.com/tender/123",
+        },
+        {
+            "title": "Structural Audit of Campus Buildings",
+            "organization": "IIT Delhi",
+            "deadline": "2026-11-01",
+            "source_url": "https://example.com/tender/456",
+        },
+    ]
+
+    result = service.deduplicate(opportunities)
+
+    assert len(result) == 2
