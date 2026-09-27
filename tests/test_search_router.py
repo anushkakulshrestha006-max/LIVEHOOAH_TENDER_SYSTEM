@@ -244,3 +244,43 @@ def test_search_router_initializes_scraper_when_serp_is_unavailable(monkeypatch)
     assert result[0]["discovery_source"] == "scraper"
     assert result[0]["source_url"] == "https://example.gov.in/tender/123"
     assert result[0]["intelligence"]["is_relevant"] is True
+
+
+def test_search_router_continues_with_scraper_after_serp_runtime_failure():
+    from core.services.search_router import SearchRouter
+
+    class FailingSearch:
+        def search(self, query):
+            raise RuntimeError(
+                "SERP provider error: Simulated provider quota exhausted"
+            )
+
+    class FakeScraperSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/456",
+                }
+            ]
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    router = SearchRouter.__new__(SearchRouter)
+    router.serp_search = FailingSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+
+    result = router.search(
+        "structural consultancy tender"
+    )
+
+    assert len(result) == 1
+    assert result[0]["discovery_source"] == "scraper"
+    assert result[0]["source_url"] == "https://example.gov.in/tender/456"
+    assert result[0]["intelligence"]["is_relevant"] is True

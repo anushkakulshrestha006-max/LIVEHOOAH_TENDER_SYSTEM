@@ -256,6 +256,13 @@ class SerpSearch:
         search = GoogleSearch(params)
         results = search.get_dict()
 
+        provider_error = results.get("error")
+
+        if provider_error:
+            raise RuntimeError(
+                f"SERP provider error: {provider_error}"
+            )
+
         opportunities = []
 
         organic_results = results.get("organic_results", [])
