@@ -79,7 +79,7 @@ def test_blocked_infrastructure_keyword_hard_rejected():
     even if it also contains structural keywords.
     """
     opportunity = {
-        "title": "Structural design consultancy for National Highway and Bridge construction",
+        "title": "Tender for Structural design consultancy for National Highway and Bridge construction",
         "description": "Structural analysis and proof checking for highway bridge",
         "organization": "NHAI",
         "location": "Delhi",
@@ -92,6 +92,26 @@ def test_blocked_infrastructure_keyword_hard_rejected():
     assert len(reasons) == 1
     assert "Blocked keyword:" in reasons[0]
 
+def test_structural_consultancy_with_minor_road_signal_is_soft_penalized():
+    """
+    Strong structural relevance with a minor road signal must reach the
+    negative-keyword penalty path rather than being hard rejected.
+    """
+    opportunity = {
+        "title": "Tender for Structural Engineering Consultancy",
+        "description": (
+            "Structural engineering consultancy for building design "
+            "and structural analysis. The project also includes "
+            "minor road coordination."
+        ),
+        "deadline": (date.today() + timedelta(days=30)).isoformat(),
+    }
+
+    score, reasons = compute_livehooah_score(opportunity)
+
+    assert score > 0.0
+    assert any("Negative keywords:" in reason for reason in reasons)
+    assert not any("Blocked keyword:" in reason for reason in reasons)
 
 # ==============================================================================
 # 3. NO STRUCTURAL RELEVANCE HARD REJECTION

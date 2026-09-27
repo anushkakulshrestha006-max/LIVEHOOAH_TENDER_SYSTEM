@@ -588,7 +588,10 @@ def compute_livehooah_score(opportunity):
             "blocked",
             [],
         )
-        if str(keyword).strip()
+        if (
+            str(keyword).strip()
+            and str(keyword).lower().strip() != "road"
+        )
     ]
 
     for keyword in blocked:
