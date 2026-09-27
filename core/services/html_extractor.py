@@ -339,12 +339,25 @@ class HTMLExtractor:
         for selector in self.MAIN_SELECTORS:
             try:
                 node = soup.select_one(selector)
+
                 if node:
-                    logger.debug(
-                        "Using content root: %s",
-                        selector,
+                    node_text = node.get_text(" ", strip=True)
+                    lower_text = node_text.lower()
+
+                    has_tender_signal = any(
+                        keyword in lower_text
+                        for keyword in self.TENDER_KEYWORDS
                     )
-                    return node
+
+                    if (
+                        len(node_text) >= self.MIN_MEANINGFUL_TEXT_LENGTH
+                        or has_tender_signal
+                    ):
+                        logger.debug(
+                            "Using content root: %s",
+                            selector,
+                        )
+                        return node
             except Exception:
                 continue
 
