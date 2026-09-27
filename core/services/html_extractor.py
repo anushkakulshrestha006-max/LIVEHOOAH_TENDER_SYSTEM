@@ -546,7 +546,12 @@ class HTMLExtractor:
 
                 combined = f"{class_names} {tag_id}"
 
-                if any(
+                has_content_hint = any(
+                    hint in combined
+                    for hint in self.CONTENT_HINTS
+                )
+
+                if not has_content_hint and any(
                     keyword in combined
                     for keyword in self.REMOVABLE_KEYWORDS
                 ):

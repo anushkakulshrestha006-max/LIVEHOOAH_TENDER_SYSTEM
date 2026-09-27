@@ -238,3 +238,36 @@ def test_extract_text_preserves_tender_content_inside_form():
     assert "Structural consultancy services" in text
     assert "Deadline: 30 September 2026" in text
     assert "EMD: 175396" in text
+
+
+def test_content_header_tender_text_is_not_removed_as_layout():
+    extractor = HTMLExtractor()
+
+    html = b"""
+    <html>
+    <body>
+        <div class="header">
+            Website Header Should Be Removed
+        </div>
+
+        <div class="content-header">
+            <h1>Notice Inviting Tender</h1>
+            <p>Structural consultancy services and proof checking.</p>
+        </div>
+
+        <div>
+            <p>Deadline for bid submission is 30 September 2026.</p>
+            <p>
+                Consultants shall submit technical and financial proposals.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+    text = extractor.extract_text(html)
+
+    assert "Website Header Should Be Removed" not in text
+    assert "Notice Inviting Tender" in text
+    assert "Structural consultancy services and proof checking" in text
+    assert "Deadline for bid submission is 30 September 2026" in text
