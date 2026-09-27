@@ -138,6 +138,7 @@ REGION_BOOST = {
     "faridabad": 0.08,
     "uttar pradesh": 0.05,
     "haryana": 0.05,
+    "punjab": 0.05,
 }
 
 
@@ -166,7 +167,6 @@ NON_PREFERRED_REGION_PENALTY = {
     "jharkhand": 0.04,
     "chhattisgarh": 0.04,
     "madhya pradesh": 0.04,
-    "punjab": 0.03,
     "uttarakhand": 0.03,
     "goa": 0.04,
     "jammu and kashmir": 0.05,

@@ -218,24 +218,23 @@ def test_preferred_region_boost():
 
 
 # ==============================================================================
-# 8. NON-PREFERRED REGION PENALTY (INCLUDING CURRENT PUNJAB BEHAVIOR)
+# 8. REGION SCORING: NON-PREFERRED KERALA AND PREFERRED PUNJAB
 # ==============================================================================
 
-def test_non_preferred_region_penalty():
+def test_region_scoring_kerala_penalty_and_punjab_boost():
     """
-    Locations in NON_PREFERRED_REGION_PENALTY receive a negative penalty.
-    Documents the CURRENT behavior for Kerala (-0.06) and Punjab (-0.03).
+    Kerala remains non-preferred (-0.06), while Punjab is a preferred
+    LiveHooah experience region and receives a +0.05 boost.
     """
     reasons_kerala = []
     penalty_kerala = apply_region_score("Project in Kerala", reasons_kerala)
     assert penalty_kerala == -0.06
     assert any("Non-preferred region (kerala) (-0.06)" in r for r in reasons_kerala)
 
-    # Current behavior: Punjab is penalized (-0.03) in the current implementation
     reasons_punjab = []
-    penalty_punjab = apply_region_score("Project in Ludhiana, Punjab", reasons_punjab)
-    assert penalty_punjab == -0.03
-    assert any("Non-preferred region (punjab) (-0.03)" in r for r in reasons_punjab)
+    boost_punjab = apply_region_score("Project in Ludhiana, Punjab", reasons_punjab)
+    assert boost_punjab == 0.05
+    assert any("Preferred region (punjab)" in r for r in reasons_punjab)
 
 
 # ==============================================================================
