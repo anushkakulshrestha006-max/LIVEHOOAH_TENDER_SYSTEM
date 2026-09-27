@@ -309,13 +309,13 @@ class PDFExtractor:
         repeated_headers = {
             line
             for line, count in header_counts.items()
-            if count >= max(2, len(pages) // 2)
+            if count >= (len(pages) // 2) + 1
         }
 
         repeated_footers = {
             line
             for line, count in footer_counts.items()
-            if count >= max(2, len(pages) // 2)
+            if count >= (len(pages) // 2) + 1
         }
 
         cleaned_pages = []
