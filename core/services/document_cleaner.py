@@ -457,7 +457,7 @@ class DocumentCleaner:
 
         re.compile(r"^\d+\s*/\s*\d+$"),
 
-        re.compile(r"^\d+$"),
+
 
         re.compile(
             r"^-+\s*\d+\s*-+$"
