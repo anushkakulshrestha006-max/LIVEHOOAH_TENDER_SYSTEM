@@ -694,7 +694,7 @@ def run_pipeline(
         qualified
     )
 
-    sheets_client = SheetsClient()
+    sheets_client = SheetsClient() if transformed else None
 
     saved = 0
 

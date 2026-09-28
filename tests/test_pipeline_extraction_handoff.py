@@ -451,3 +451,78 @@ def test_run_pipeline_reuses_shared_search_budget_across_discovery_retries():
 if __name__ == "__main__":
     test_discovery_metadata_handoff_to_structured_extraction()
     print("PASS: test_discovery_metadata_handoff_to_structured_extraction")
+
+
+def test_run_pipeline_does_not_initialize_sheets_when_nothing_qualifies():
+    query = "structural consultancy rejected opportunity"
+
+    discovery_candidate = {
+        "title": "Discovery Candidate",
+        "source_url": "https://example.gov.in/tenders/rejected-606.html",
+    }
+
+    extracted_opportunity = {
+        "title": "Notice Inviting Tender for Structural Consultancy",
+        "organization": "Central Public Works Department",
+        "deadline": "2099-12-31",
+        "location": "New Delhi",
+        "description": "Structural consultancy services for building works.",
+        "tender_type": "Notice Inviting Tender",
+        "source_url": discovery_candidate["source_url"],
+    }
+
+    with patch(
+        "core.services.opportunity_pipeline.run_tender_discovery"
+    ) as mock_discovery, patch(
+        "core.services.opportunity_pipeline.engine.extract"
+    ) as mock_extract, patch(
+        "core.services.opportunity_pipeline.deduplicator.deduplicate"
+    ) as mock_deduplicate, patch(
+        "core.services.opportunity_pipeline.compute_livehooah_score"
+    ) as mock_score, patch(
+        "core.services.opportunity_pipeline.qualify_opportunity"
+    ) as mock_qualify, patch(
+        "core.services.opportunity_pipeline.SheetsClient"
+    ) as mock_sheets_cls:
+
+        mock_discovery.return_value = {
+            "status": "success",
+            "opportunities": [discovery_candidate],
+        }
+
+        mock_extract.return_value = extracted_opportunity
+        mock_deduplicate.return_value = [extracted_opportunity]
+
+        mock_score.return_value = (
+            0.40,
+            ["MATCHER_REASONING"],
+        )
+
+        mock_qualify.return_value = (
+            False,
+            ["Score below minimum LiveHooah threshold"],
+        )
+
+        result = run_pipeline(query)
+
+    mock_discovery.assert_called_once_with(query)
+    mock_extract.assert_called_once_with(
+        discovery_candidate["source_url"]
+    )
+    mock_deduplicate.assert_called_once_with(
+        [extracted_opportunity]
+    )
+    mock_score.assert_called_once_with(
+        extracted_opportunity
+    )
+    mock_qualify.assert_called_once_with(
+        extracted_opportunity
+    )
+
+    mock_sheets_cls.assert_not_called()
+
+    assert result["meta"]["total_found"] == 0
+    assert result["meta"]["saved"] == 0
+    assert result["meta"]["duplicates"] == 0
+    assert result["meta"]["failed"] == 0
+    assert result["opportunities"] == []
