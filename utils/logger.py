@@ -2,11 +2,13 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+from config.settings import BASE_DIR
+
 # --------------------------------------------------
 # Create logs directory if it doesn't exist
 # --------------------------------------------------
 
-LOG_DIR = Path("logs")
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 # --------------------------------------------------
