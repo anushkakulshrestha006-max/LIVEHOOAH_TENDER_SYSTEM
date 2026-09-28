@@ -392,6 +392,7 @@ class ScraperSearch:
 
     def __init__(self):
         self.sources = OFFICIAL_SOURCES
+        self._page_cache = {}
 
     # ------------------------------------------------------------------
     # Query helpers
@@ -799,6 +800,9 @@ class ScraperSearch:
         self,
         url: str,
     ):
+        if url in self._page_cache:
+            return self._page_cache[url]
+
         logger.debug(
             "Fetching scraper page: %s",
             url,
@@ -821,6 +825,8 @@ class ScraperSearch:
                     response.status_code,
                 )
 
+                self._page_cache[url] = None
+
                 return None
 
             content_type = response.headers.get(
@@ -840,7 +846,11 @@ class ScraperSearch:
                     content_type,
                 )
 
+                self._page_cache[url] = None
+
                 return None
+
+            self._page_cache[url] = response.text
 
             return response.text
 
@@ -851,6 +861,8 @@ class ScraperSearch:
                 url,
                 exc,
             )
+
+            self._page_cache[url] = None
 
             return None
 
