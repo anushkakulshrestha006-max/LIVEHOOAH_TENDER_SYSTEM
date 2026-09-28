@@ -11,6 +11,11 @@ from utils.duplicate_detector import is_duplicate
 
 from utils.logger import logger
 
+from config.settings import (
+    GOOGLE_SHEET_NAME,
+    SERVICE_ACCOUNT_FILE,
+)
+
 from config.constants import (
     OPPORTUNITIES_SHEET,
     OPPORTUNITY_PREFIX,
@@ -57,14 +62,14 @@ class SheetsClient:
         ]
 
         self.creds = Credentials.from_service_account_file(
-            "config/service_account.json",
+            str(SERVICE_ACCOUNT_FILE),
             scopes=self.scopes
         )
 
         self.client = gspread.authorize(self.creds)
 
         self.sheet = self.client.open(
-            "LIVEHOOAH Opportunity Intelligence Hub"
+            GOOGLE_SHEET_NAME
         )
 
         self._opportunities_cache = None
