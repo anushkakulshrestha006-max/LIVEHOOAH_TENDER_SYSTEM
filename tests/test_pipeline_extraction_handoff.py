@@ -396,6 +396,58 @@ def test_run_pipeline_counts_sheets_write_exception_as_failed():
     assert len(result["opportunities"]) == 1
 
 
+def test_run_pipeline_reuses_shared_search_budget_across_discovery_retries():
+    from core.services.search_budget import SearchBudget
+
+    query = "structural consultancy retry budget"
+
+    budget = SearchBudget(
+        serp_limit=5
+    )
+
+    captured_budgets = []
+
+    def mock_discovery(
+        discovery_query,
+        search_budget=None,
+    ):
+        assert discovery_query == query
+
+        captured_budgets.append(
+            search_budget
+        )
+
+        return {
+            "status": "success",
+            "opportunities": [],
+        }
+
+    with patch(
+        "core.services.opportunity_pipeline.run_tender_discovery",
+        side_effect=mock_discovery,
+    ) as mock_discovery_call, patch(
+        "core.services.opportunity_pipeline.time.sleep"
+    ) as mock_sleep:
+
+        result = run_pipeline(
+            query,
+            max_retries=2,
+            search_budget=budget,
+        )
+
+    assert mock_discovery_call.call_count == 2
+
+    assert len(captured_budgets) == 2
+    assert captured_budgets[0] is budget
+    assert captured_budgets[1] is budget
+    assert captured_budgets[0] is captured_budgets[1]
+
+    assert mock_sleep.call_count == 2
+
+    assert result["meta"]["note"] == "Discovery failed"
+    assert result["opportunities"] == []
+
+
 if __name__ == "__main__":
     test_discovery_metadata_handoff_to_structured_extraction()
     print("PASS: test_discovery_metadata_handoff_to_structured_extraction")

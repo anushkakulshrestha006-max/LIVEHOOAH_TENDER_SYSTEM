@@ -422,6 +422,7 @@ def qualify_opportunity(opportunity):
 def run_pipeline(
     query: str,
     max_retries: int = 3,
+    search_budget=None,
 ):
 
     logger.info(
@@ -448,9 +449,15 @@ def run_pipeline(
 
         try:
 
-            result = run_tender_discovery(
-                query
-            )
+            if search_budget is None:
+                result = run_tender_discovery(
+                    query
+                )
+            else:
+                result = run_tender_discovery(
+                    query,
+                    search_budget=search_budget,
+                )
 
         except Exception as e:
 
@@ -842,7 +849,9 @@ def run_pipeline(
 # BATCH PIPELINE
 # =====================================================
 
-def run_livehooah_pipeline():
+def run_livehooah_pipeline(
+    search_budget=None,
+):
 
     all_opportunities = []
 
@@ -858,9 +867,15 @@ def run_livehooah_pipeline():
 
     for query in LIVEHOOAH_QUERIES:
 
-        result = run_pipeline(
-            query
-        )
+        if search_budget is None:
+            result = run_pipeline(
+                query
+            )
+        else:
+            result = run_pipeline(
+                query,
+                search_budget=search_budget,
+            )
 
         all_opportunities.extend(
             result.get(

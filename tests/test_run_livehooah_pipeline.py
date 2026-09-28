@@ -61,3 +61,53 @@ def test_run_livehooah_pipeline_aggregates_query_results():
         {"title": "Opportunity Two"},
         {"title": "Opportunity Three"},
     ]
+
+
+def test_run_livehooah_pipeline_reuses_one_search_budget_for_all_queries():
+    from core.services.search_budget import SearchBudget
+
+    budget = SearchBudget(
+        serp_limit=7
+    )
+
+    captured_budgets = []
+
+    def mock_run_pipeline(
+        query,
+        search_budget=None,
+    ):
+        captured_budgets.append(
+            search_budget
+        )
+
+        return {
+            "meta": {
+                "total_found": 0,
+                "saved": 0,
+                "duplicates": 0,
+                "failed": 0,
+            },
+            "opportunities": [],
+        }
+
+    with patch(
+        "core.services.opportunity_pipeline.LIVEHOOAH_QUERIES",
+        ["query-one", "query-two"],
+    ), patch(
+        "core.services.opportunity_pipeline.run_pipeline",
+        side_effect=mock_run_pipeline,
+    ) as mock_pipeline:
+
+        result = run_livehooah_pipeline(
+            search_budget=budget
+        )
+
+    assert mock_pipeline.call_count == 2
+
+    assert len(captured_budgets) == 2
+    assert captured_budgets[0] is budget
+    assert captured_budgets[1] is budget
+    assert captured_budgets[0] is captured_budgets[1]
+
+    assert result["meta"]["total_queries"] == 2
+    assert result["opportunities"] == []

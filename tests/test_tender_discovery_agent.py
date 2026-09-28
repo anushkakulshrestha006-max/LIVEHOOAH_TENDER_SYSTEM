@@ -104,3 +104,40 @@ def test_run_tender_discovery_continues_after_search_failure(monkeypatch):
         }
         for opportunity in result["opportunities"]
     )
+
+def test_run_tender_discovery_passes_shared_search_budget_to_router(monkeypatch):
+    from core.services.search_budget import SearchBudget
+
+    captured_budgets = []
+
+    class FakeRouter:
+        def __init__(self, search_budget=None):
+            captured_budgets.append(
+                search_budget
+            )
+
+        def search(self, query):
+            return []
+
+    monkeypatch.setattr(
+        tender_discovery_agent,
+        "SearchRouter",
+        FakeRouter,
+    )
+
+    budget = SearchBudget(
+        serp_limit=3
+    )
+
+    result = tender_discovery_agent.run_tender_discovery(
+        "structural audit",
+        search_budget=budget,
+    )
+
+    assert result == {
+        "status": "success",
+        "opportunities": [],
+    }
+
+    assert len(captured_budgets) == 1
+    assert captured_budgets[0] is budget

@@ -215,7 +215,10 @@ def expand_query(query: str):
 # TENDER DISCOVERY PIPELINE
 # ==============================================================================
 
-def run_tender_discovery(query: str):
+def run_tender_discovery(
+    query: str,
+    search_budget=None,
+):
     """
     Run the discovery stage for a single base query.
 
@@ -254,7 +257,12 @@ def run_tender_discovery(query: str):
     The returned opportunities are intentionally raw discovery candidates.
     """
 
-    router = SearchRouter()
+    if search_budget is None:
+        router = SearchRouter()
+    else:
+        router = SearchRouter(
+            search_budget=search_budget
+        )
 
     expanded_queries = expand_query(
         query

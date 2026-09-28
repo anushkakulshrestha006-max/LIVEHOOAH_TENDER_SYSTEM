@@ -284,3 +284,120 @@ def test_search_router_continues_with_scraper_after_serp_runtime_failure():
     assert result[0]["discovery_source"] == "scraper"
     assert result[0]["source_url"] == "https://example.gov.in/tender/456"
     assert result[0]["intelligence"]["is_relevant"] is True
+
+
+def test_search_router_respects_shared_serp_budget():
+    from core.services.search_budget import SearchBudget
+    from core.services.search_router import SearchRouter
+
+    class FakeSerpSearch:
+        def __init__(self):
+            self.calls = []
+
+        def search(self, query):
+            self.calls.append(query)
+            return []
+
+    class FakeScraperSearch:
+        def __init__(self):
+            self.calls = []
+
+        def search(self, query):
+            self.calls.append(query)
+            return []
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    budget = SearchBudget(
+        serp_limit=1
+    )
+
+    router = SearchRouter.__new__(SearchRouter)
+    router.serp_search = FakeSerpSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+    router.search_budget = budget
+
+    router.search(
+        "structural consultancy tender"
+    )
+
+    router.search(
+        "structural audit tender"
+    )
+
+    assert router.serp_search.calls == [
+        "structural consultancy tender"
+    ]
+
+    assert router.scraper_search.calls == [
+        "structural consultancy tender",
+        "structural audit tender",
+    ]
+
+    assert budget.serp_used == 1
+    assert budget.serp_remaining == 0
+
+
+def test_search_router_disables_shared_serp_budget_after_runtime_failure():
+    from core.services.search_budget import SearchBudget
+    from core.services.search_router import SearchRouter
+
+    class FailingSerpSearch:
+        def __init__(self):
+            self.calls = []
+
+        def search(self, query):
+            self.calls.append(query)
+            raise RuntimeError(
+                "SERP provider error: Simulated provider quota exhausted"
+            )
+
+    class FakeScraperSearch:
+        def __init__(self):
+            self.calls = []
+
+        def search(self, query):
+            self.calls.append(query)
+            return []
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    budget = SearchBudget(
+        serp_limit=5
+    )
+
+    router = SearchRouter.__new__(SearchRouter)
+    router.serp_search = FailingSerpSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+    router.search_budget = budget
+
+    router.search(
+        "structural consultancy tender"
+    )
+
+    router.search(
+        "structural audit tender"
+    )
+
+    assert router.serp_search.calls == [
+        "structural consultancy tender"
+    ]
+
+    assert router.scraper_search.calls == [
+        "structural consultancy tender",
+        "structural audit tender",
+    ]
+
+    assert budget.serp_used == 1
+    assert budget.serp_remaining == 4
+    assert budget.can_use_serp() is False

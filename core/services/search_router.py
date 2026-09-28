@@ -239,7 +239,12 @@ MIN_DISCOVERY_SCORE = 10
 
 class SearchRouter:
 
-    def __init__(self):
+    def __init__(
+        self,
+        search_budget=None,
+    ):
+
+        self.search_budget = search_budget
 
         try:
             self.serp_search = SerpSearch()
@@ -578,27 +583,43 @@ class SearchRouter:
 
         if self.serp_search is not None:
 
-            try:
+            search_budget = getattr(
+                self,
+                "search_budget",
+                None,
+            )
 
-                results = self.serp_search.search(
-                    query
-                )
+            serp_allowed = (
+                search_budget is None
+                or search_budget.consume_serp()
+            )
 
-                if results:
+            if serp_allowed:
 
-                    for result in results:
-                        result.setdefault("discovery_source", "serp")
+                try:
 
-                    opportunities.extend(
-                        results
+                    results = self.serp_search.search(
+                        query
                     )
 
-            except Exception:
+                    if results:
 
-                logger.exception(
-                    "SERP search failed | query=%s",
-                    query,
-                )
+                        for result in results:
+                            result.setdefault("discovery_source", "serp")
+
+                        opportunities.extend(
+                            results
+                        )
+
+                except Exception:
+
+                    if search_budget is not None:
+                        search_budget.disable_serp()
+
+                    logger.exception(
+                        "SERP search failed | query=%s",
+                        query,
+                    )
 
         # ==================================================
         # SCRAPER SEARCH
