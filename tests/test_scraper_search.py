@@ -272,3 +272,83 @@ def test_crawl_source_does_not_fetch_archive_navigation_page(
         "https://example.gov.in/tenders-archive.php"
         not in fetched_urls
     )
+
+
+def test_extract_links_accepts_generic_download_with_strong_tender_row_context():
+    scraper = ScraperSearch()
+
+    html = """
+    <html>
+        <body>
+            <table>
+                <tr>
+                    <td>
+                        Tender for appointment of structural consultant
+                        for proof checking and design verification
+                    </td>
+                    <td>
+                        <a href="/docs/proof-checking.pdf">
+                            Download
+                        </a>
+                    </td>
+                </tr>
+            </table>
+        </body>
+    </html>
+    """
+
+    opportunities = scraper._extract_links(
+        html,
+        "https://example.gov.in/tenders",
+        "proof checking consultant",
+    )
+
+    assert len(opportunities) == 1
+
+    opportunity = opportunities[0]
+
+    assert opportunity["source_url"] == (
+        "https://example.gov.in/docs/proof-checking.pdf"
+    )
+
+    assert (
+        "proof checking"
+        in opportunity["title"].lower()
+    )
+
+    assert (
+        "structural consultant"
+        in opportunity["title"].lower()
+    )
+
+
+def test_extract_links_rejects_generic_download_without_livehooah_context():
+    scraper = ScraperSearch()
+
+    html = """
+    <html>
+        <body>
+            <table>
+                <tr>
+                    <td>
+                        General procurement notice for
+                        cafeteria equipment and supplies
+                    </td>
+                    <td>
+                        <a href="/docs/cafeteria-equipment.pdf">
+                            Download
+                        </a>
+                    </td>
+                </tr>
+            </table>
+        </body>
+    </html>
+    """
+
+    opportunities = scraper._extract_links(
+        html,
+        "https://example.gov.in/tenders",
+        "proof checking consultant",
+    )
+
+    assert opportunities == []

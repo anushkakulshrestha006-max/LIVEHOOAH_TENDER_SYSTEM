@@ -1146,7 +1146,15 @@ class ScraperSearch:
         if self._is_bad_url(url):
             return False
 
-        if self._is_bad_title(text):
+        normalized_title = " ".join(
+            text.lower().split()
+        )
+
+        if (
+            self._is_bad_title(text)
+            and normalized_title
+            not in self.GENERIC_ANCHOR_TEXTS
+        ):
             return False
 
         combined = " ".join(
@@ -1198,10 +1206,6 @@ class ScraperSearch:
         # --------------------------------------------------------------
         # Generic navigation protection.
         # --------------------------------------------------------------
-
-        normalized_title = " ".join(
-            text.lower().split()
-        )
 
         if (
             normalized_title
@@ -1507,7 +1511,19 @@ class ScraperSearch:
                 strip=True,
             )
 
-            if self._is_bad_title(text):
+            normalized_title = " ".join(
+                text.lower().split()
+            )
+
+            generic_anchor = (
+                normalized_title
+                in self.GENERIC_ANCHOR_TEXTS
+            )
+
+            if (
+                self._is_bad_title(text)
+                and not generic_anchor
+            ):
                 continue
 
             local_context = self._extract_link_context(
@@ -1539,12 +1555,6 @@ class ScraperSearch:
                 or absolute.rstrip(
                     "/"
                 ).split("/")[-1]
-            )
-
-            generic_anchor = (
-                not text
-                or text.strip().lower()
-                in self.GENERIC_ANCHOR_TEXTS
             )
 
             if generic_anchor:
