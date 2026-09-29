@@ -746,18 +746,7 @@ class ScraperSearch:
             )
 
             if self._is_bad_url(absolute):
-                normalized_absolute = absolute.lower()
-
-                procurement_archive_signal = (
-                    "archive" in normalized_absolute
-                    and self._procurement_navigation_score(
-                    text,
-                    absolute,
-                ) > 0
-            )
-
-                if not procurement_archive_signal:
-                    continue
+                continue
 
             if self._has_bad_query_pattern(absolute):
                 continue

@@ -162,3 +162,113 @@ def test_fetch_page_caches_other_failed_fetches(
         assert request_calls == [
             url,
         ], scenario
+
+def test_discover_navigation_links_rejects_archive_page():
+    scraper = ScraperSearch()
+
+    html = """
+    <html>
+        <body>
+            <a href="/current-tenders.php">
+                Current Tenders
+            </a>
+
+            <a href="/tenders-archive.php">
+                Old Tenders
+            </a>
+        </body>
+    </html>
+    """
+
+    links = scraper._discover_navigation_links(
+        html,
+        "https://example.gov.in/tenders.php",
+    )
+
+    discovered_urls = [
+        url
+        for _, url, _ in links
+    ]
+
+    assert (
+        "https://example.gov.in/current-tenders.php"
+        in discovered_urls
+    )
+
+    assert (
+        "https://example.gov.in/tenders-archive.php"
+        not in discovered_urls
+    )
+
+def test_bad_url_allows_tender_document_inside_archive_directory():
+    scraper = ScraperSearch()
+
+    url = (
+        "https://example.gov.in/"
+        "public/storage/tenders_archives/"
+        "NIT_123456.pdf"
+    )
+
+    assert scraper._is_bad_url(url) is False
+
+
+def test_crawl_source_does_not_fetch_archive_navigation_page(
+    monkeypatch,
+):
+    scraper = ScraperSearch()
+
+    fetched_urls = []
+
+    pages = {
+        "https://example.gov.in": """
+            <html>
+                <body>
+                    <a href="/current-tenders.php">
+                        Current Tenders
+                    </a>
+                    <a href="/tenders-archive.php">
+                        Old Tenders
+                    </a>
+                </body>
+            </html>
+        """,
+        "https://example.gov.in/current-tenders.php": """
+            <html>
+                <body>
+                    Current procurement page
+                </body>
+            </html>
+        """,
+        "https://example.gov.in/tenders-archive.php": """
+            <html>
+                <body>
+                    Old procurement records
+                </body>
+            </html>
+        """,
+    }
+
+    def fake_fetch_page(url):
+        fetched_urls.append(url)
+        return pages.get(url)
+
+    monkeypatch.setattr(
+        scraper,
+        "_fetch_page",
+        fake_fetch_page,
+    )
+
+    scraper._crawl_source(
+        "https://example.gov.in",
+        "structural consultancy",
+    )
+
+    assert (
+        "https://example.gov.in/current-tenders.php"
+        in fetched_urls
+    )
+
+    assert (
+        "https://example.gov.in/tenders-archive.php"
+        not in fetched_urls
+    )
