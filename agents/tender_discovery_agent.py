@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from core.services.search_router import SearchRouter
 
@@ -182,7 +183,11 @@ def expand_query(query: str):
         structural audit eprocurement
     """
 
-    expanded = []
+    current_year = datetime.now().year
+
+    expanded = [
+        f"{query} {current_year}"
+    ]
 
     for suffix in SEARCH_SUFFIXES:
 

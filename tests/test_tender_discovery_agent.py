@@ -33,6 +33,10 @@ def test_run_tender_discovery_prefixes_and_aggregates_queries(monkeypatch):
 
     assert (
         searched_queries[0]
+        == "structural engineering consultancy road construction 2026"
+    )
+    assert (
+        searched_queries[1]
         == "structural engineering consultancy road construction"
     )
 
@@ -60,7 +64,14 @@ def test_run_tender_discovery_preserves_aligned_query(monkeypatch):
         "opportunities": [],
     }
 
-    assert searched_queries[0] == "structural audit"
+    assert searched_queries[0] == "structural audit 2026"
+    assert searched_queries[1] == "structural audit"
+    assert all(
+        not query.startswith(
+            "structural engineering consultancy structural audit"
+        )
+        for query in searched_queries
+    )
 
 
 def test_run_tender_discovery_continues_after_search_failure(monkeypatch):
@@ -141,3 +152,29 @@ def test_run_tender_discovery_passes_shared_search_budget_to_router(monkeypatch)
 
     assert len(captured_budgets) == 1
     assert captured_budgets[0] is budget
+
+
+def test_expand_query_prioritizes_current_year_for_fresh_discovery(monkeypatch):
+    class FixedDateTime:
+        @classmethod
+        def now(cls):
+            class FixedNow:
+                year = 2026
+
+            return FixedNow()
+
+    monkeypatch.setattr(
+        tender_discovery_agent,
+        "datetime",
+        FixedDateTime,
+        raising=False,
+    )
+
+    expanded = tender_discovery_agent.expand_query(
+        "structural consultant"
+    )
+
+    assert expanded[0] == "structural consultant 2026"
+    assert expanded[1] == "structural consultant"
+    assert "structural consultant tender" in expanded
+    assert "structural consultant RFP" in expanded
