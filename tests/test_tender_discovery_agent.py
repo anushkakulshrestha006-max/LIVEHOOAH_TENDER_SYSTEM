@@ -33,11 +33,11 @@ def test_run_tender_discovery_prefixes_and_aggregates_queries(monkeypatch):
 
     assert (
         searched_queries[0]
-        == "structural engineering consultancy road construction 2026"
+        == "structural engineering consultancy road construction tender 2026"
     )
     assert (
         searched_queries[1]
-        == "structural engineering consultancy road construction"
+        == "structural engineering consultancy road construction 2026"
     )
 
 
@@ -64,8 +64,8 @@ def test_run_tender_discovery_preserves_aligned_query(monkeypatch):
         "opportunities": [],
     }
 
-    assert searched_queries[0] == "structural audit 2026"
-    assert searched_queries[1] == "structural audit"
+    assert searched_queries[0] == "structural audit tender 2026"
+    assert searched_queries[1] == "structural audit 2026"
     assert all(
         not query.startswith(
             "structural engineering consultancy structural audit"
@@ -174,7 +174,32 @@ def test_expand_query_prioritizes_current_year_for_fresh_discovery(monkeypatch):
         "structural consultant"
     )
 
-    assert expanded[0] == "structural consultant 2026"
-    assert expanded[1] == "structural consultant"
+    assert expanded[0] == "structural consultant tender 2026"
+    assert expanded[1] == "structural consultant 2026"
     assert "structural consultant tender" in expanded
     assert "structural consultant RFP" in expanded
+
+
+def test_expand_query_prioritizes_current_year_tender_intent(monkeypatch):
+    class FixedDateTime:
+        @classmethod
+        def now(cls):
+            class FixedNow:
+                year = 2026
+
+            return FixedNow()
+
+    monkeypatch.setattr(
+        tender_discovery_agent,
+        "datetime",
+        FixedDateTime,
+        raising=False,
+    )
+
+    expanded = tender_discovery_agent.expand_query(
+        "structural audit"
+    )
+
+    assert expanded[0] == "structural audit tender 2026"
+    assert expanded[1] == "structural audit 2026"
+    assert "structural audit tender" in expanded

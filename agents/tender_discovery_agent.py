@@ -186,7 +186,8 @@ def expand_query(query: str):
     current_year = datetime.now().year
 
     expanded = [
-        f"{query} {current_year}"
+        f"{query} tender {current_year}",
+        f"{query} {current_year}",
     ]
 
     for suffix in SEARCH_SUFFIXES:
