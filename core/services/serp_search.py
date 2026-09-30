@@ -242,7 +242,7 @@ class SerpSearch:
             )
 
     def search(self, query: str):
-        print(f"🔎 SERP Search: {query}")
+        print(f"SERP Search: {query}")
 
         params = {
             "engine": "google",
@@ -278,7 +278,7 @@ class SerpSearch:
             # Hard filtering
             # --------------------------------------------------
             if should_skip_result(title, url):
-                print(f"⏭️ Skipping low-quality result: {title}")
+                print(f"Skipping low-quality result: {title}")
                 continue
 
             # --------------------------------------------------
@@ -292,7 +292,7 @@ class SerpSearch:
 
             # Reject obviously poor candidates
             if discovery_score < 0:
-                print(f"⛔ Rejected ({discovery_score}) : {title}")
+                print(f"Rejected ({discovery_score}) : {title}")
                 continue
 
             opportunity = {
@@ -327,6 +327,6 @@ class SerpSearch:
             print(f"[{opp['discovery_score']:>2}] {opp['title']}")
 
         print("=" * 70)
-        print(f"✅ Returning {len(opportunities)} ranked opportunities")
+        print(f"Returning {len(opportunities)} ranked opportunities")
 
         return opportunities
