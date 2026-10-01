@@ -339,6 +339,98 @@ def main():
     )
 
     # ------------------------------------------------------------------
+    # 8. SEARCH/RESULT PAGE MUST NOT REPLACE TENDER DETAIL PAGE
+    # ------------------------------------------------------------------
+
+    tender_detail_url = (
+        "https://example.com/details/structural-audit-123"
+    )
+
+    search_result_url = (
+        "https://example.com/searchresult/"
+        "?st=c&sf=10&sd=empanelment"
+    )
+
+    search_navigation_html = f"""
+    <html>
+        <body>
+            <h1>Structural Audit Tender</h1>
+
+            <a href="{search_result_url}">
+                Empanelment
+            </a>
+        </body>
+    </html>
+    """
+
+    resolver = SourceResolver()
+
+    resolver.session = FakeSession(
+        response=FakeResponse(
+            url=tender_detail_url,
+            text=search_navigation_html,
+            content_type="text/html",
+        )
+    )
+
+    result = resolver.resolve(
+        tender_detail_url
+    )
+
+    results.append(
+        run_test(
+            "Search page not selected as tender source",
+            result == tender_detail_url,
+        )
+    )
+
+    # ------------------------------------------------------------------
+    # 9. APP/NAVIGATION PAGE MUST NOT REPLACE TENDER DETAIL PAGE
+    # ------------------------------------------------------------------
+
+    tender_detail_url = (
+        "https://example.com/details/structural-audit-456"
+    )
+
+    app_page_url = (
+        "https://example.com/pages/"
+        "download-tender-mobile-app"
+    )
+
+    app_navigation_html = f"""
+    <html>
+        <body>
+            <h1>Structural Audit Consultancy</h1>
+
+            <a href="{app_page_url}">
+                Download Tender Mobile App
+            </a>
+        </body>
+    </html>
+    """
+
+    resolver = SourceResolver()
+
+    resolver.session = FakeSession(
+        response=FakeResponse(
+            url=tender_detail_url,
+            text=app_navigation_html,
+            content_type="text/html",
+        )
+    )
+
+    result = resolver.resolve(
+        tender_detail_url
+    )
+
+    results.append(
+        run_test(
+            "App page not selected as tender source",
+            result == tender_detail_url,
+        )
+    )
+
+    # ------------------------------------------------------------------
     # FINAL RESULT
     # ------------------------------------------------------------------
 

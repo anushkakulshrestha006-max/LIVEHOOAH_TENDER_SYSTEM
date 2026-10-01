@@ -131,6 +131,12 @@ class SourceResolver:
         "web.whatsapp.com",
     )
 
+    NAVIGATION_PATH_KEYWORDS = (
+        "/searchresult/",
+        "/search/",
+        "/pages/download-tender-mobile-app",
+    )
+
     def __init__(self, timeout: int = 20):
         self.timeout = timeout
 
@@ -267,6 +273,16 @@ class SourceResolver:
                 domain == blocked
                 or domain.endswith("." + blocked)
                 for blocked in self.COMMUNICATION_DOMAINS
+            ):
+                continue
+
+            path = urlparse(
+                absolute
+            ).path.lower()
+
+            if any(
+                keyword in path
+                for keyword in self.NAVIGATION_PATH_KEYWORDS
             ):
                 continue
 
