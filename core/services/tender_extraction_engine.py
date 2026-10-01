@@ -1,4 +1,5 @@
 import logging
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -54,6 +55,7 @@ class TenderExtractionEngine:
     """
 
     MIN_TEXT_LENGTH = 120
+    MAX_PUNCTUATION_SYMBOL_RATIO = 0.40
 
     REQUIRED_KEYWORDS = (
         "tender",
@@ -116,6 +118,7 @@ class TenderExtractionEngine:
     REASON_TEXT_TOO_SHORT = "TEXT_TOO_SHORT"
     REASON_INVALID_ERROR_PAGE = "INVALID_ERROR_PAGE"
     REASON_NAVIGATION_PAGE = "NAVIGATION_PAGE"
+    REASON_UNREADABLE_TEXT = "UNREADABLE_TEXT"
     REASON_NO_TENDER_SIGNALS = "NO_TENDER_SIGNALS"
     REASON_PARSER_FAILED = "PARSER_FAILED"
     REASON_INVALID_STRUCTURED_RESULT = (
@@ -741,6 +744,32 @@ class TenderExtractionEngine:
 
             return False
 
+        punctuation_symbol_ratio = (
+            self._punctuation_symbol_ratio(text)
+        )
+
+        if (
+            punctuation_symbol_ratio
+            > self.MAX_PUNCTUATION_SYMBOL_RATIO
+        ):
+
+            self._reject(
+                self.REASON_UNREADABLE_TEXT,
+                url=url,
+            )
+
+            logger.warning(
+                "Document rejected: excessive punctuation/symbol "
+                "density | url=%s | ratio=%.4f | maximum=%.2f",
+                url,
+                punctuation_symbol_ratio,
+                self.MAX_PUNCTUATION_SYMBOL_RATIO,
+            )
+
+            self._print_preview(text)
+
+            return False
+
         score = self._document_score(text)
 
         logger.debug(
@@ -944,6 +973,30 @@ class TenderExtractionEngine:
 
         except TypeError:
             return 0
+
+    # ------------------------------------------------------------------
+
+    def _punctuation_symbol_ratio(
+        self,
+        text: str,
+    ) -> float:
+        """
+        Return the share of Unicode punctuation/symbol characters.
+
+        Unicode categories are used so this check does not assume
+        ASCII or Latin-script text.
+        """
+
+        if not text:
+            return 0.0
+
+        punctuation_symbols = sum(
+            1
+            for char in text
+            if unicodedata.category(char)[0] in ("P", "S")
+        )
+
+        return punctuation_symbols / len(text)
 
     # ------------------------------------------------------------------
 

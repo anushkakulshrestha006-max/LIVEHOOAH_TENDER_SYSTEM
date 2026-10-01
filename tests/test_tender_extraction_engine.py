@@ -206,6 +206,72 @@ def test_extract_document_validation_rejection(invalid_text):
     engine.parser.parse.assert_not_called()
 
 
+def test_extract_rejects_garbled_text_with_tender_signals():
+    engine = TenderExtractionEngine()
+
+    engine.resolver = MagicMock()
+    engine.resolver.resolve.return_value = (
+        "https://example.com/noisy-page.html"
+    )
+
+    engine.fetcher = MagicMock()
+    engine.fetcher.fetch.return_value = {
+        "success": True,
+        "content": "<html><body>content</body></html>",
+        "content_type": "text/html",
+    }
+
+    garbled_text = (
+        "x$#@!7]q{~|^%*&=+<>/\\ "
+        "tender "
+        "z]#@!{~^%*&=+<>/\\ "
+        "request for proposal "
+        "q$#@!7]{~|^%*&=+<>/\\ "
+        "consultancy "
+    ) * 40
+
+    assert len(garbled_text) >= 120
+    assert engine._document_score(garbled_text) >= 2
+
+    engine.html_extractor.extract_text = MagicMock(
+        return_value=garbled_text
+    )
+    engine.cleaner.clean = MagicMock(
+        side_effect=lambda text: text
+    )
+    engine.parser.parse = MagicMock(
+        return_value={
+            "title": "Garbage Should Never Reach Parser",
+        }
+    )
+
+    result = engine.extract(
+        "https://example.com/noisy-page.html"
+    )
+
+    assert result == {}
+    engine.parser.parse.assert_not_called()
+
+
+def test_document_validation_accepts_symbol_heavy_tender_text():
+    engine = TenderExtractionEngine()
+
+    text = (
+        "Notice Inviting Tender | RFP | Consultancy Services\n"
+        "Tender No.: ABC/2026/17 | EMD: Rs. 50,000/-\n"
+        "Scope of Work: Structural Audit & Assessment\n"
+        "Technical Bid | Financial Bid | Submission: 31-12-2026\n"
+        "Eligibility: Consultant / Engineer / Firm\n"
+        + ("Structural consultancy services & tender submission. " * 8)
+    )
+
+    assert len(text) >= engine.MIN_TEXT_LENGTH
+    assert engine._is_valid_document(
+        text,
+        "https://example.gov.in/tender/17",
+    )
+
+
 @pytest.mark.parametrize(
     "parser_result,parser_exc",
     [
