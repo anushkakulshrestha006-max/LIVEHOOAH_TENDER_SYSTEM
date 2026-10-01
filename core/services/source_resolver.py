@@ -125,6 +125,12 @@ class SourceResolver:
         "#",
     )
 
+    COMMUNICATION_DOMAINS = (
+        "wa.me",
+        "api.whatsapp.com",
+        "web.whatsapp.com",
+    )
+
     def __init__(self, timeout: int = 20):
         self.timeout = timeout
 
@@ -252,6 +258,17 @@ class SourceResolver:
             absolute = urljoin(base_url, href)
 
             absolute = self._normalize(absolute)
+
+            domain = urlparse(
+                absolute
+            ).netloc.lower()
+
+            if any(
+                domain == blocked
+                or domain.endswith("." + blocked)
+                for blocked in self.COMMUNICATION_DOMAINS
+            ):
+                continue
 
             link_text = tag.get_text(" ", strip=True)
 

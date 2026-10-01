@@ -290,6 +290,55 @@ def main():
     )
 
     # ------------------------------------------------------------------
+    # 7. COMMUNICATION LINK MUST NOT BECOME SOURCE
+    # ------------------------------------------------------------------
+
+    tender_page_url = (
+        "https://example.com/"
+        "structural-audit-tender"
+    )
+
+    whatsapp_url = (
+        "https://wa.me/919999999999"
+        "?text=Interested%20in%20Tender%20Bidding"
+        "%20GeM%20Registration%20and"
+        "%20Consultancy%20Services"
+    )
+
+    communication_html = f"""
+    <html>
+        <body>
+            <h1>Structural Audit Tender</h1>
+
+            <a href="{whatsapp_url}">
+                Live Chat
+            </a>
+        </body>
+    </html>
+    """
+
+    resolver = SourceResolver()
+
+    resolver.session = FakeSession(
+        response=FakeResponse(
+            url=tender_page_url,
+            text=communication_html,
+            content_type="text/html",
+        )
+    )
+
+    result = resolver.resolve(
+        tender_page_url
+    )
+
+    results.append(
+        run_test(
+            "Communication link not selected as source",
+            result == tender_page_url,
+        )
+    )
+
+    # ------------------------------------------------------------------
     # FINAL RESULT
     # ------------------------------------------------------------------
 
