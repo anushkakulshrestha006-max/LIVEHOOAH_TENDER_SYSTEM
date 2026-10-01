@@ -276,13 +276,27 @@ class SourceResolver:
             ):
                 continue
 
-            path = urlparse(
+            parsed_absolute = urlparse(
                 absolute
-            ).path.lower()
+            )
+
+            path = parsed_absolute.path.lower()
 
             if any(
                 keyword in path
                 for keyword in self.NAVIGATION_PATH_KEYWORDS
+            ):
+                continue
+
+            page_parsed = urlparse(
+                base_url
+            )
+
+            if (
+                parsed_absolute.netloc.lower()
+                == page_parsed.netloc.lower()
+                and path in ("", "/")
+                and page_parsed.path not in ("", "/")
             ):
                 continue
 

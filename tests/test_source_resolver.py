@@ -431,6 +431,49 @@ def main():
     )
 
     # ------------------------------------------------------------------
+    # 10. SITE HOMEPAGE MUST NOT REPLACE TENDER DETAIL PAGE
+    # ------------------------------------------------------------------
+
+    tender_detail_url = (
+        "https://example.com/details/structural-audit-789"
+    )
+
+    homepage_url = "https://example.com"
+
+    homepage_navigation_html = f"""
+    <html>
+        <body>
+            <h1>Structural Audit Tender</h1>
+
+            <a href="{homepage_url}">
+                tender document
+            </a>
+        </body>
+    </html>
+    """
+
+    resolver = SourceResolver()
+
+    resolver.session = FakeSession(
+        response=FakeResponse(
+            url=tender_detail_url,
+            text=homepage_navigation_html,
+            content_type="text/html",
+        )
+    )
+
+    result = resolver.resolve(
+        tender_detail_url
+    )
+
+    results.append(
+        run_test(
+            "Homepage not selected as tender source",
+            result == tender_detail_url,
+        )
+    )
+
+    # ------------------------------------------------------------------
     # FINAL RESULT
     # ------------------------------------------------------------------
 
