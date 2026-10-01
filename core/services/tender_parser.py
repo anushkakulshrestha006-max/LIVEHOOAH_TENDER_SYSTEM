@@ -134,6 +134,7 @@ class TenderParser:
         "implementing agency",
         "purchaser",
         "buyer",
+        "office",
     ]
 
     # ------------------------------------------------------------------
@@ -224,6 +225,7 @@ class TenderParser:
         "place of execution",
         "execution location",
         "project site",
+        "station",
     ]
 
     # ------------------------------------------------------------------
@@ -673,6 +675,70 @@ class TenderParser:
 
         # Titles almost always occur near the beginning.
         search_window = lines[:80]
+
+        # Prefer an explicitly labeled multiline work name over
+        # heuristic title candidates. Government tender documents
+        # commonly wrap "Name of work:" across several PDF lines.
+        for idx, raw_line in enumerate(search_window):
+
+            match = re.match(
+                r"^\s*(?:\d+[.)]?\s*)?"
+                r"name\s+of\s+work\s*[:\-]\s*(.*)$",
+                raw_line,
+                flags=re.IGNORECASE,
+            )
+
+            if not match:
+                continue
+
+            title_parts = []
+
+            first_part = self._clean_title_candidate(
+                match.group(1)
+            )
+
+            if first_part:
+                title_parts.append(first_part)
+
+            next_idx = idx + 1
+
+            while next_idx < len(search_window):
+
+                continuation = search_window[next_idx].strip()
+
+                if not continuation:
+                    break
+
+                if re.match(
+                    r"^\s*\d+(?:\.\d+)*[.)]?\s+",
+                    continuation,
+                ):
+                    break
+
+                cleaned = self._clean_title_candidate(
+                    continuation
+                )
+
+                if not cleaned:
+                    break
+
+                if self._is_authority_or_admin_line(cleaned):
+                    break
+
+                if self._looks_like_metadata(cleaned):
+                    break
+
+                title_parts.append(cleaned)
+                next_idx += 1
+
+            explicit_title = " ".join(title_parts)
+
+            explicit_title = self._clean_title_metadata(
+                explicit_title
+            ).rstrip(" .")
+
+            if len(explicit_title.split()) >= 4:
+                return explicit_title
 
         for idx in range(len(search_window)):
 
@@ -4393,7 +4459,12 @@ class TenderParser:
             elif len(title.split()) < 3:
                 validated["title"] = ""
 
-            elif len(title) > 250:
+            # Individual heuristic title candidates are already
+            # limited to 250 characters by _clean_title_candidate().
+            # Allow a larger final bound for legitimate multiline
+            # structured titles assembled from separately validated
+            # physical lines (for example, "Name of work:" fields).
+            elif len(title) > 500:
                 validated["title"] = ""
 
         # -----------------------------
