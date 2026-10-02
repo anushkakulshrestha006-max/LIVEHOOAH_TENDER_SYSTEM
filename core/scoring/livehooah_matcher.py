@@ -590,7 +590,11 @@ def compute_livehooah_score(opportunity):
         )
         if (
             str(keyword).strip()
-            and str(keyword).lower().strip() != "road"
+            and str(keyword).lower().strip()
+            not in {
+                "road",
+                "expressway",
+            }
         )
     ]
 

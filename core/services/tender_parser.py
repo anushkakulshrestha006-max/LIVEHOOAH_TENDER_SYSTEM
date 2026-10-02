@@ -145,6 +145,7 @@ class TenderParser:
         r"\b\d{4}-\d{1,2}-\d{1,2}\b",
         r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
         r"\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b",
+        r"\b\d{1,2}-[A-Za-z]{3,9}-\d{4}\b",
         r"\b[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\b",
         r"\b\d{1,2}\.[0-9]{1,2}\.\d{2,4}\b",
     ]
@@ -2920,16 +2921,29 @@ class TenderParser:
                     )
                 )
 
-                if candidate and self._is_invalid_organization_candidate(
+                if (
+                    not candidate
+                    and has_field_separator
+                    and line_index + 1 < len(lines)
+                ):
+                    candidate = (
+                        self._clean_organization_candidate(
+                            lines[line_index + 1]
+                        )
+                    )
+
+                if not candidate:
+                    continue
+
+                if self._is_invalid_organization_candidate(
                     candidate
                 ):
                     continue
 
-                if candidate:
-                    candidate_score = self._score_organization_candidate(
-                        candidate,
-                        line_index,
-                    )
+                candidate_score = self._score_organization_candidate(
+                    candidate,
+                    line_index,
+                )
 
                 candidate_lower = candidate.lower()
 
@@ -2980,11 +2994,19 @@ class TenderParser:
                     title,
                 )
 
+                is_explicit_issuer = (
+                    label.lower() == "issued by"
+                    and has_field_separator
+                )
+
                 if (
                     candidate_score > 0
                     and not has_address_noise
                     and not has_contact_noise
-                    and not has_title_overlap
+                    and (
+                        not has_title_overlap
+                        or is_explicit_issuer
+                    )
                 ):
                     return self._normalize_organization(candidate)
 
@@ -3091,7 +3113,48 @@ class TenderParser:
         lines = text.splitlines()
 
         # --------------------------------------------------
-        # Pass 1: Context-aware search
+        # Pass 1: Strong submission/due-date context
+        # --------------------------------------------------
+
+        strong_deadline_context = (
+            "bid due",
+            "bid submission",
+            "proposal submission",
+            "submission deadline",
+            "last date for submission",
+            "last date of submission",
+            "tender closing",
+            "closing date",
+        )
+
+        for line in lines:
+
+            lower = line.lower()
+
+            if not any(
+                context in lower
+                for context in strong_deadline_context
+            ):
+                continue
+
+            for pattern in self.DATE_PATTERNS:
+
+                matches = re.findall(
+                    pattern,
+                    line,
+                )
+
+                for value in matches:
+
+                    parsed = self._normalize_date(
+                        value
+                    )
+
+                    if parsed:
+                        return parsed
+
+        # --------------------------------------------------
+        # Pass 2: General deadline context
         # --------------------------------------------------
 
         for line in lines:
@@ -3121,7 +3184,7 @@ class TenderParser:
                         return parsed
 
         # --------------------------------------------------
-        # Pass 2: Global fallback
+        # Pass 3: Global fallback
         # --------------------------------------------------
 
         for pattern in self.DATE_PATTERNS:
@@ -3165,6 +3228,8 @@ class TenderParser:
             "%d.%m.%y",
             "%d %B %Y",
             "%d %b %Y",
+            "%d-%B-%Y",
+            "%d-%b-%Y",
             "%B %d, %Y",
             "%b %d, %Y",
         ]

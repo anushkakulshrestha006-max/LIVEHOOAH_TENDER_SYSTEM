@@ -185,3 +185,73 @@ def test_deadline_remains_empty_when_referenced_externally():
     assert result["deadline"] == "", (
         f"Expected empty deadline for external schedule, got {result['deadline']!r}"
     )
+
+
+def test_organization_handles_empty_issued_by_label_before_institution_name():
+    parser = TenderParser()
+
+    text = """
+    Request for Proposal (RFP)
+
+    Selection of Consultant for Design and Structural
+    Consultancy Services for the Entry Gate and surrounding area
+
+    Location: Gautam Budh Nagar District, Uttar Pradesh
+
+    Issued by:
+    YAMUNA EXPRESSWAY INDUSTRIAL DEVELOPMENT AUTHORITY
+
+    Last Date: 21/10/2026
+    """
+
+    result = parser.parse(text)
+
+    assert result["organization"] == (
+        "YAMUNA EXPRESSWAY INDUSTRIAL DEVELOPMENT AUTHORITY"
+    )
+
+
+def test_deadline_prefers_bid_due_date_over_query_deadline():
+    parser = TenderParser()
+
+    text = """
+    Request for Proposal
+
+    Schedule of Bidding Process
+    Task Key Dates
+    Bid upload date 28.09.2026
+    Last date of receiving queries 06.10.2026 by 5pm IST
+    Pre-bid conference 07.10.2026 at 3pm IST
+    Bid Due Date 21.10.2026 by 5pm IST
+    Opening of Technical Bids 23.10.2026 at 11am IST
+    """
+
+    result = parser.parse(text)
+
+    assert result["deadline"] == "2026-10-21"
+
+
+def test_organization_uses_value_on_line_after_explicit_issued_by_label():
+    parser = TenderParser()
+
+    text = """
+    Request for Proposal
+
+    Selection of Consultant for Design and Structural
+    Consultancy Services for the Entry Gate and surrounding area
+    at Chainage 7.1 km of the Yamuna Expressway Industrial
+    Development Authority (YEIDA)
+
+    Location: Gautam Budh Nagar District, Uttar Pradesh
+
+    Issued by:
+    YAMUNA EXPRESSWAY INDUSTRIAL DEVELOPMENT AUTHORITY
+
+    First Floor, Commercial Complex, P-2, Sector Omega I
+    """
+
+    result = parser.parse(text)
+
+    assert result["organization"] == (
+        "YAMUNA EXPRESSWAY INDUSTRIAL DEVELOPMENT AUTHORITY"
+    )

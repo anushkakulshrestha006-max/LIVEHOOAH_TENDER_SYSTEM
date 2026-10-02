@@ -625,3 +625,45 @@ def test_none_values_do_not_create_false_structural_match_or_inflate_score():
     assert score_st_none == score_st_empty
     assert reasons_st_none == reasons_st_empty
 
+
+
+def test_structural_consultancy_with_expressway_context_is_soft_penalized():
+    """
+    A strong structural consultancy opportunity must not be hard rejected
+    merely because 'expressway' appears as project/client context.
+
+    Expressway remains a negative signal and should reach the normal
+    negative-keyword penalty path.
+    """
+    opportunity = {
+        "title": (
+            "RFP for Design and Structural Consultancy Services "
+            "for Entry Gate"
+        ),
+        "description": (
+            "Selection of consultant for structural design and "
+            "structural consultancy services for an entry gate "
+            "in the Yamuna Expressway development area."
+        ),
+        "organization": (
+            "YAMUNA EXPRESSWAY INDUSTRIAL DEVELOPMENT AUTHORITY"
+        ),
+        "location": "Gautam Budh Nagar, Uttar Pradesh",
+        "deadline": (
+            date.today() + timedelta(days=20)
+        ).isoformat(),
+        "source_url": "https://etender.up.nic.in/tender.pdf",
+    }
+
+    score, reasons = compute_livehooah_score(opportunity)
+
+    assert score > 0.0
+    assert any(
+        "Negative keywords:" in reason
+        and "expressway" in reason
+        for reason in reasons
+    )
+    assert not any(
+        "Blocked keyword: expressway" in reason
+        for reason in reasons
+    )
