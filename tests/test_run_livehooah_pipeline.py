@@ -63,14 +63,15 @@ def test_run_livehooah_pipeline_aggregates_query_results():
     ]
 
 
-def test_run_livehooah_pipeline_reuses_one_search_budget_for_all_queries():
+def test_run_livehooah_pipeline_spreads_serp_budget_across_base_queries():
     from core.services.search_budget import SearchBudget
 
     budget = SearchBudget(
-        serp_limit=7
+        serp_limit=2
     )
 
     captured_budgets = []
+    paid_queries = []
 
     def mock_run_pipeline(
         query,
@@ -79,6 +80,13 @@ def test_run_livehooah_pipeline_reuses_one_search_budget_for_all_queries():
         captured_budgets.append(
             search_budget
         )
+
+        if search_budget.consume_serp():
+            paid_queries.append(query)
+
+        # A second paid request from the same base query
+        # must be blocked by its scoped allowance.
+        assert search_budget.consume_serp() is False
 
         return {
             "meta": {
@@ -105,9 +113,18 @@ def test_run_livehooah_pipeline_reuses_one_search_budget_for_all_queries():
     assert mock_pipeline.call_count == 2
 
     assert len(captured_budgets) == 2
-    assert captured_budgets[0] is budget
-    assert captured_budgets[1] is budget
-    assert captured_budgets[0] is captured_budgets[1]
+    assert captured_budgets[0] is not budget
+    assert captured_budgets[1] is not budget
+    assert captured_budgets[0] is not captured_budgets[1]
+
+    assert paid_queries == [
+        "query-one",
+        "query-two",
+    ]
+
+    assert budget.serp_used == 2
+    assert budget.serp_remaining == 0
+    assert budget.consume_serp() is False
 
     assert result["meta"]["total_queries"] == 2
     assert result["opportunities"] == []

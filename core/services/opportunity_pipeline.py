@@ -3,6 +3,7 @@ from datetime import datetime
 
 from utils.logger import logger
 from core.services.deduplication import DeduplicationService
+from core.services.search_budget import ScopedSearchBudget
 from agents.tender_discovery_agent import (
     run_tender_discovery,
     LIVEHOOAH_QUERIES,
@@ -872,9 +873,14 @@ def run_livehooah_pipeline(
                 query
             )
         else:
+            scoped_budget = ScopedSearchBudget(
+                parent=search_budget,
+                serp_limit=1,
+            )
+
             result = run_pipeline(
                 query,
-                search_budget=search_budget,
+                search_budget=scoped_budget,
             )
 
         all_opportunities.extend(
