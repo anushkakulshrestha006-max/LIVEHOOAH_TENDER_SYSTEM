@@ -637,6 +637,12 @@ class SearchRouter:
                 query
             )
 
+            logger.info(
+                "Scraper raw results | query=%s | count=%d",
+                query,
+                len(results or []),
+            )
+
             if results:
 
                 for result in results:
@@ -692,7 +698,15 @@ class SearchRouter:
 
             deduped_opportunities.append(opportunity)
 
+        combined_count = len(opportunities)
         opportunities = deduped_opportunities
+
+        logger.info(
+            "Discovery dedup diagnostics | "
+            "combined=%d | deduplicated=%d",
+            combined_count,
+            len(opportunities),
+        )
 
         # ==================================================
         # PRE-EXTRACTION TENDER FILTER + SCORING

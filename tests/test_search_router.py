@@ -497,3 +497,62 @@ def test_search_router_logs_discovery_filter_diagnostics(caplog):
         "total=2 | rejected_invalid=1 | "
         "rejected_below_score=0 | accepted=1"
     ) in caplog.text
+
+def test_search_router_logs_scraper_and_dedup_counts(caplog):
+    import logging
+
+    router = make_router()
+
+    class FakeSerpSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/123",
+                }
+            ]
+
+    class FakeScraperSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/123",
+                },
+                {
+                    "title": "Structural Audit Tender",
+                    "description": "Tender for structural audit consultancy",
+                    "source_url": "https://example.gov.in/tender/456",
+                },
+            ]
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    router.serp_search = FakeSerpSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+    router.search_budget = None
+
+    with caplog.at_level(logging.INFO):
+        result = router.search(
+            "structural consultancy tender"
+        )
+
+    assert len(result) == 2
+
+    assert (
+        "Scraper raw results | "
+        "query=structural consultancy tender | "
+        "count=2"
+    ) in caplog.text
+
+    assert (
+        "Discovery dedup diagnostics | "
+        "combined=3 | deduplicated=2"
+    ) in caplog.text
