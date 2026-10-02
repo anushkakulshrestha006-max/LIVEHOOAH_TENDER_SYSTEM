@@ -449,3 +449,51 @@ def test_search_router_logs_raw_serp_result_count(caplog):
         "query=structural consultancy tender | "
         "count=2"
     ) in caplog.text
+
+def test_search_router_logs_discovery_filter_diagnostics(caplog):
+    import logging
+
+    router = make_router()
+
+    class FakeSerpSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/accepted",
+                },
+                {
+                    "title": "Housekeeping Tender",
+                    "description": "Housekeeping and cleaning services",
+                    "source_url": "https://example.gov.in/tender/rejected",
+                },
+            ]
+
+    class FakeScraperSearch:
+        def search(self, query):
+            return []
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    router.serp_search = FakeSerpSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+    router.search_budget = None
+
+    with caplog.at_level(logging.INFO):
+        result = router.search(
+            "structural consultancy tender"
+        )
+
+    assert len(result) == 1
+
+    assert (
+        "Discovery filter diagnostics | "
+        "total=2 | rejected_invalid=1 | "
+        "rejected_below_score=0 | accepted=1"
+    ) in caplog.text

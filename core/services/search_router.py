@@ -700,16 +700,34 @@ class SearchRouter:
 
         scored_opportunities = []
 
+        rejected_invalid = 0
+        rejected_below_score = 0
+
         for opportunity in opportunities:
 
             is_valid, score = self._score_opportunity(opportunity)
 
-            if not is_valid or score < MIN_DISCOVERY_SCORE:
+            if not is_valid:
+                rejected_invalid += 1
+                continue
+
+            if score < MIN_DISCOVERY_SCORE:
+                rejected_below_score += 1
                 continue
 
             opportunity["discovery_score"] = score
 
             scored_opportunities.append(opportunity)
+
+        logger.info(
+            "Discovery filter diagnostics | "
+            "total=%d | rejected_invalid=%d | "
+            "rejected_below_score=%d | accepted=%d",
+            len(opportunities),
+            rejected_invalid,
+            rejected_below_score,
+            len(scored_opportunities),
+        )
 
         scored_opportunities.sort(
             key=lambda opp: opp.get("discovery_score", 0),
