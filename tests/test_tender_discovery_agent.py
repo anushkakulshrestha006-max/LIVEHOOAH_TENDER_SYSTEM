@@ -203,3 +203,16 @@ def test_expand_query_prioritizes_current_year_tender_intent(monkeypatch):
     assert expanded[0] == "structural audit tender 2026"
     assert expanded[1] == "structural audit 2026"
     assert "structural audit tender" in expanded
+
+def test_livehooah_queries_include_adjacent_structural_consultancy_services():
+    expected_queries = {
+        "condition assessment consultant",
+        "structural condition assessment",
+        "design review consultant",
+        "structural design review",
+        "design checking consultant",
+    }
+
+    assert expected_queries.issubset(
+        set(tender_discovery_agent.LIVEHOOAH_QUERIES)
+    )

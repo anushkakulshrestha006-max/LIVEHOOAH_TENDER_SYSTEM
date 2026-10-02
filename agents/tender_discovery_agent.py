@@ -89,6 +89,8 @@ LIVEHOOAH_QUERIES = [
     "structural health assessment",
     "existing building structural audit",
     "structural assessment consultant",
+    "condition assessment consultant",
+    "structural condition assessment",
 
     # ======================================================
     # RETROFITTING / REHABILITATION
@@ -109,6 +111,9 @@ LIVEHOOAH_QUERIES = [
     "structural proof checking",
     "independent proof consultant",
     "design verification consultant",
+    "design review consultant",
+    "structural design review",
+    "design checking consultant",
 
     # ======================================================
     # WAREHOUSE / INDUSTRIAL
