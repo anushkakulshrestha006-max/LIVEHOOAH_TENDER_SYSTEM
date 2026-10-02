@@ -401,3 +401,51 @@ def test_search_router_disables_shared_serp_budget_after_runtime_failure():
     assert budget.serp_used == 1
     assert budget.serp_remaining == 4
     assert budget.can_use_serp() is False
+
+def test_search_router_logs_raw_serp_result_count(caplog):
+    import logging
+
+    router = make_router()
+
+    class FakeSerpSearch:
+        def search(self, query):
+            return [
+                {
+                    "title": "Structural Consultancy Tender",
+                    "description": "Tender for structural consultancy services",
+                    "source_url": "https://example.gov.in/tender/123",
+                },
+                {
+                    "title": "Structural Audit Tender",
+                    "description": "Tender for structural audit consultancy",
+                    "source_url": "https://example.gov.in/tender/456",
+                },
+            ]
+
+    class FakeScraperSearch:
+        def search(self, query):
+            return []
+
+    class FakeIntelligence:
+        def analyze(self, opportunity):
+            return {
+                "is_relevant": True,
+            }
+
+    router.serp_search = FakeSerpSearch()
+    router.scraper_search = FakeScraperSearch()
+    router.intelligence = FakeIntelligence()
+    router.search_budget = None
+
+    with caplog.at_level(logging.INFO):
+        result = router.search(
+            "structural consultancy tender"
+        )
+
+    assert len(result) == 2
+
+    assert (
+        "SERP raw results | "
+        "query=structural consultancy tender | "
+        "count=2"
+    ) in caplog.text

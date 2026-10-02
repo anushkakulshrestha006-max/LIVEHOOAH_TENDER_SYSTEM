@@ -602,6 +602,12 @@ class SearchRouter:
                         query
                     )
 
+                    logger.info(
+                        "SERP raw results | query=%s | count=%d",
+                        query,
+                        len(results or []),
+                    )
+
                     if results:
 
                         for result in results:
