@@ -467,9 +467,20 @@ def run_pipeline(
                 f"{attempt + 1}: {e}"
             )
 
-            result = {
-                "opportunities": []
-            }
+            if attempt + 1 < max_retries:
+
+                logger.warning(
+                    f"Retrying discovery after crash. "
+                    f"Retry {attempt + 1}/{max_retries}"
+                )
+
+                time.sleep(
+                    2 * (
+                        attempt + 1
+                    )
+                )
+
+            continue
 
         opportunities = result.get(
             "opportunities",
@@ -482,16 +493,12 @@ def run_pipeline(
 
             break
 
-        logger.warning(
-            f"Empty discovery result. "
-            f"Retry {attempt + 1}/{max_retries}"
+        logger.info(
+            "Discovery completed successfully "
+            "with no opportunities"
         )
 
-        time.sleep(
-            2 * (
-                attempt + 1
-            )
-        )
+        break
 
     if not last_result:
 

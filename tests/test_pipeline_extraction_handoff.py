@@ -417,10 +417,9 @@ def test_run_pipeline_reuses_shared_search_budget_across_discovery_retries():
             search_budget
         )
 
-        return {
-            "status": "success",
-            "opportunities": [],
-        }
+        raise RuntimeError(
+            "simulated discovery crash"
+        )
 
     with patch(
         "core.services.opportunity_pipeline.run_tender_discovery",
@@ -442,7 +441,7 @@ def test_run_pipeline_reuses_shared_search_budget_across_discovery_retries():
     assert captured_budgets[1] is budget
     assert captured_budgets[0] is captured_budgets[1]
 
-    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_count == 1
 
     assert result["meta"]["note"] == "Discovery failed"
     assert result["opportunities"] == []
@@ -525,4 +524,41 @@ def test_run_pipeline_does_not_initialize_sheets_when_nothing_qualifies():
     assert result["meta"]["saved"] == 0
     assert result["meta"]["duplicates"] == 0
     assert result["meta"]["failed"] == 0
+    assert result["opportunities"] == []
+
+def test_run_pipeline_does_not_retry_successful_empty_discovery():
+    query = "structural consultancy successful empty discovery"
+
+    successful_empty_result = {
+        "status": "success",
+        "opportunities": [],
+    }
+
+    with patch(
+        "core.services.opportunity_pipeline.run_tender_discovery",
+        return_value=successful_empty_result,
+    ) as mock_discovery, patch(
+        "core.services.opportunity_pipeline.time.sleep"
+    ) as mock_sleep:
+
+        result = run_pipeline(
+            query,
+            max_retries=3,
+        )
+
+    mock_discovery.assert_called_once_with(
+        query
+    )
+
+    mock_sleep.assert_not_called()
+
+    assert result["meta"] == {
+        "query": query,
+        "total_found": 0,
+        "saved": 0,
+        "duplicates": 0,
+        "failed": 0,
+        "note": "Discovery failed",
+    }
+
     assert result["opportunities"] == []
