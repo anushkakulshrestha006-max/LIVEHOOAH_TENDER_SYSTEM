@@ -1,4 +1,5 @@
 import re
+import time
 from collections import deque
 from urllib.parse import urljoin, urlparse, urldefrag
 
@@ -35,6 +36,8 @@ class ScraperSearch:
     """
 
     REQUEST_TIMEOUT = 10
+
+    MAX_SOURCE_CRAWL_SECONDS = 20
 
     MAX_SOURCES_PER_SEARCH = 15
 
@@ -1645,9 +1648,28 @@ class ScraperSearch:
 
         seen_opportunity_urls = set()
 
+        crawl_started_at = time.monotonic()
+
         while queue:
 
             if len(fetched) >= self.MAX_PAGES_PER_SOURCE:
+                break
+
+            elapsed = (
+                time.monotonic()
+                - crawl_started_at
+            )
+
+            if elapsed >= self.MAX_SOURCE_CRAWL_SECONDS:
+
+                logger.debug(
+                    "Scraper source crawl budget exhausted | "
+                    "source=%s | elapsed=%.2f | pages=%d",
+                    base_url,
+                    elapsed,
+                    len(fetched),
+                )
+
                 break
 
             current_url, depth = queue.popleft()

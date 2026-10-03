@@ -352,3 +352,63 @@ def test_extract_links_rejects_generic_download_without_livehooah_context():
     )
 
     assert opportunities == []
+
+def test_crawl_source_stops_when_source_time_budget_is_exhausted(
+    monkeypatch,
+):
+    scraper = ScraperSearch()
+
+    scraper.MAX_SOURCE_CRAWL_SECONDS = 20
+
+    fetched_urls = []
+
+    pages = {
+        "https://example.gov.in": """
+            <html>
+                <body>
+                    <a href="/tenders">
+                        Current Tenders
+                    </a>
+                </body>
+            </html>
+        """,
+        "https://example.gov.in/tenders": """
+            <html>
+                <body>
+                    <a href="/procurement">
+                        Procurement Notices
+                    </a>
+                </body>
+            </html>
+        """,
+    }
+
+    def fake_fetch_page(url):
+        fetched_urls.append(url)
+        return pages.get(url)
+
+    monotonic_values = iter([
+        100.0,
+        105.0,
+        121.0,
+    ])
+
+    monkeypatch.setattr(
+        scraper,
+        "_fetch_page",
+        fake_fetch_page,
+    )
+
+    monkeypatch.setattr(
+        "core.services.scraper_search.time.monotonic",
+        lambda: next(monotonic_values),
+    )
+
+    scraper._crawl_source(
+        "https://example.gov.in",
+        "structural consultancy tender",
+    )
+
+    assert fetched_urls == [
+        "https://example.gov.in",
+    ]
