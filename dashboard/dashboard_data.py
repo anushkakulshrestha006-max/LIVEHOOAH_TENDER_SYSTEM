@@ -392,3 +392,133 @@ def get_deadline_status(deadline, today=None):
         "days": days,
         "label": f"{days} days left",
     }
+
+def build_opportunity_trend(records):
+    """
+    Build dashboard-ready opportunity counts grouped by Date_Added.
+    """
+    counts = {}
+
+    for record in records:
+        date_added = str(record.get("Date_Added", "")).strip()
+        try:
+            parsed_date = datetime.fromisoformat(
+                date_added.replace("Z", "+00:00")
+            ).date().isoformat()
+        except ValueError:
+            continue
+
+        counts[parsed_date] = counts.get(parsed_date, 0) + 1
+
+    return [
+        {
+            "Date": date_added,
+            "Opportunities": counts[date_added],
+        }
+        for date_added in sorted(counts)
+    ]
+
+def build_priority_distribution(records):
+    """
+    Build dashboard-ready counts for known opportunity priorities.
+    """
+    counts = {
+        "HIGH": 0,
+        "MEDIUM": 0,
+        "LOW": 0,
+    }
+
+    for record in records:
+        priority = str(record.get("Priority", "")).strip().upper()
+        if priority in counts:
+            counts[priority] += 1
+
+    return [
+        {
+            "Priority": priority,
+            "Opportunities": counts[priority],
+        }
+        for priority in ("HIGH", "MEDIUM", "LOW")
+        if counts[priority] > 0
+    ]
+
+def build_qualification_trend(records):
+    """
+    Build dashboard-ready opportunity and qualification counts by Date_Added.
+    """
+    counts = {}
+
+    for record in records:
+        date_added = str(record.get("Date_Added", "")).strip()
+        try:
+            parsed_date = datetime.fromisoformat(
+                date_added.replace("Z", "+00:00")
+            ).date().isoformat()
+        except ValueError:
+            continue
+
+        bucket = counts.setdefault(
+            parsed_date,
+            {"Opportunities": 0, "Qualified": 0},
+        )
+        bucket["Opportunities"] += 1
+
+        if _is_true(record.get("Qualified")):
+            bucket["Qualified"] += 1
+
+    return [
+        {
+            "Date": date_added,
+            "Opportunities": counts[date_added]["Opportunities"],
+            "Qualified": counts[date_added]["Qualified"],
+            "Qualification_Rate": round(
+                counts[date_added]["Qualified"]
+                / counts[date_added]["Opportunities"]
+                * 100,
+                2,
+            ),
+        }
+        for date_added in sorted(counts)
+    ]
+
+def build_deadline_distribution(records, today=None):
+    """
+    Build dashboard-ready counts of upcoming and expired opportunities.
+    """
+    if today is None:
+        today_date = datetime.now().date()
+    elif hasattr(today, "date"):
+        today_date = today.date()
+    else:
+        today_date = datetime.fromisoformat(str(today)).date()
+
+    counts = {
+        "UPCOMING": 0,
+        "EXPIRED": 0,
+    }
+
+    for record in records:
+        deadline = str(record.get("Deadline", "")).strip()
+        if not deadline:
+            continue
+
+        try:
+            deadline_date = datetime.fromisoformat(
+                deadline.replace("Z", "+00:00")
+            ).date()
+        except ValueError:
+            continue
+
+        if deadline_date >= today_date:
+            counts["UPCOMING"] += 1
+        else:
+            counts["EXPIRED"] += 1
+
+    return [
+        {
+            "Status": status,
+            "Opportunities": counts[status],
+        }
+        for status in ("UPCOMING", "EXPIRED")
+        if counts[status] > 0
+    ]

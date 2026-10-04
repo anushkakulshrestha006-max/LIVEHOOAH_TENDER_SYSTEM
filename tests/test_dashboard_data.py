@@ -348,3 +348,82 @@ def test_load_activity_log_reads_activity_log_sheet():
 
     assert records == sheets_client.read_records.return_value
     sheets_client.read_records.assert_called_once_with(ACTIVITY_LOG_SHEET)
+
+def test_build_opportunity_trend_counts_records_by_date():
+    from dashboard.dashboard_data import build_opportunity_trend
+
+    records = [
+        {"Opportunity_ID": "OPP-000014", "Date_Added": "2026-10-02"},
+        {"Opportunity_ID": "OPP-000015", "Date_Added": "2026-10-03"},
+        {"Opportunity_ID": "OPP-000016", "Date_Added": "2026-10-03"},
+        {"Opportunity_ID": "OPP-000017", "Date_Added": ""},
+        {"Opportunity_ID": "OPP-000018", "Date_Added": "not-a-date"},
+    ]
+
+    assert build_opportunity_trend(records) == [
+        {"Date": "2026-10-02", "Opportunities": 1},
+        {"Date": "2026-10-03", "Opportunities": 2},
+    ]
+
+def test_build_priority_distribution_counts_known_priorities():
+    from dashboard.dashboard_data import build_priority_distribution
+
+    records = [
+        {"Opportunity_ID": "OPP-000014", "Priority": "HIGH"},
+        {"Opportunity_ID": "OPP-000015", "Priority": "medium"},
+        {"Opportunity_ID": "OPP-000016", "Priority": " HIGH "},
+        {"Opportunity_ID": "OPP-000017", "Priority": "LOW"},
+        {"Opportunity_ID": "OPP-000018", "Priority": ""},
+        {"Opportunity_ID": "OPP-000019", "Priority": "UNKNOWN"},
+    ]
+
+    assert build_priority_distribution(records) == [
+        {"Priority": "HIGH", "Opportunities": 2},
+        {"Priority": "MEDIUM", "Opportunities": 1},
+        {"Priority": "LOW", "Opportunities": 1},
+    ]
+
+def test_build_qualification_trend_counts_and_calculates_rate():
+    from dashboard.dashboard_data import build_qualification_trend
+
+    records = [
+        {"Opportunity_ID": "OPP-000014", "Date_Added": "2026-10-02", "Qualified": "TRUE"},
+        {"Opportunity_ID": "OPP-000015", "Date_Added": "2026-10-02", "Qualified": "FALSE"},
+        {"Opportunity_ID": "OPP-000016", "Date_Added": "2026-10-03", "Qualified": True},
+        {"Opportunity_ID": "OPP-000017", "Date_Added": "2026-10-03", "Qualified": "TRUE"},
+        {"Opportunity_ID": "OPP-000018", "Date_Added": "", "Qualified": "TRUE"},
+    ]
+
+    assert build_qualification_trend(records) == [
+        {
+            "Date": "2026-10-02",
+            "Opportunities": 2,
+            "Qualified": 1,
+            "Qualification_Rate": 50.0,
+        },
+        {
+            "Date": "2026-10-03",
+            "Opportunities": 2,
+            "Qualified": 2,
+            "Qualification_Rate": 100.0,
+        },
+    ]
+
+def test_build_deadline_distribution_counts_upcoming_and_expired():
+    from dashboard.dashboard_data import build_deadline_distribution
+
+    records = [
+        {"Opportunity_ID": "OPP-000014", "Deadline": "2026-10-10"},
+        {"Opportunity_ID": "OPP-000015", "Deadline": "2026-10-01"},
+        {"Opportunity_ID": "OPP-000016", "Deadline": "2026-10-10"},
+        {"Opportunity_ID": "OPP-000017", "Deadline": ""},
+        {"Opportunity_ID": "OPP-000018", "Deadline": "not-a-date"},
+    ]
+
+    assert build_deadline_distribution(
+        records,
+        today="2026-10-04",
+    ) == [
+        {"Status": "UPCOMING", "Opportunities": 2},
+        {"Status": "EXPIRED", "Opportunities": 1},
+    ]

@@ -6,11 +6,15 @@ import streamlit as st
 from dashboard.dashboard_data import (
     build_dashboard_metrics,
     build_data_quality_metrics,
+    build_daily_run_audit,
+    build_deadline_distribution,
+    build_opportunity_trend,
+    build_priority_distribution,
+    build_qualification_trend,
     filter_opportunities,
     get_deadline_status,
     load_activity_log,
     load_opportunities,
-    build_daily_run_audit,
     sort_opportunities_by_deadline,
 )
 
@@ -357,6 +361,16 @@ except Exception as exc:
 
 
 # ================================================================
+# Analytics
+# ================================================================
+
+opportunity_trend = build_opportunity_trend(records)
+priority_distribution = build_priority_distribution(records)
+qualification_trend = build_qualification_trend(records)
+deadline_distribution = build_deadline_distribution(records)
+
+
+# ================================================================
 # Sidebar
 # ================================================================
 
@@ -572,6 +586,84 @@ else:
             ),
         },
     )
+
+
+# ================================================================
+# Analytics
+# ================================================================
+
+st.markdown(
+    """
+    <div class="lh-section">
+        <div class="lh-section-title">
+            Analytics
+        </div>
+        <div class="lh-section-copy">
+            Opportunity trends, priority mix, qualification performance,
+            and deadline status.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+analytics_col_1, analytics_col_2 = st.columns(2)
+
+with analytics_col_1:
+    st.markdown("#### Opportunity Trend")
+    if opportunity_trend:
+        opportunity_trend_table = pd.DataFrame(
+            opportunity_trend
+        ).set_index("Date")
+        st.line_chart(
+            opportunity_trend_table["Opportunities"],
+            width="stretch",
+        )
+    else:
+        st.info("No opportunity trend data available.")
+
+with analytics_col_2:
+    st.markdown("#### Priority Distribution")
+    if priority_distribution:
+        priority_table = pd.DataFrame(
+            priority_distribution
+        ).set_index("Priority")
+        st.bar_chart(
+            priority_table["Opportunities"],
+            width="stretch",
+        )
+    else:
+        st.info("No priority distribution data available.")
+
+analytics_col_3, analytics_col_4 = st.columns(2)
+
+with analytics_col_3:
+    st.markdown("#### Qualification Trend")
+    if qualification_trend:
+        qualification_table = pd.DataFrame(
+            qualification_trend
+        ).set_index("Date")
+        st.line_chart(
+            qualification_table[
+                ["Opportunities", "Qualified"]
+            ],
+            width="stretch",
+        )
+    else:
+        st.info("No qualification trend data available.")
+
+with analytics_col_4:
+    st.markdown("#### Deadline Distribution")
+    if deadline_distribution:
+        deadline_table = pd.DataFrame(
+            deadline_distribution
+        ).set_index("Status")
+        st.bar_chart(
+            deadline_table["Opportunities"],
+            width="stretch",
+        )
+    else:
+        st.info("No deadline distribution data available.")
 
 
 # ================================================================
