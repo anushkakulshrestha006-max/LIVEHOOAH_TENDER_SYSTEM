@@ -412,3 +412,48 @@ def test_crawl_source_stops_when_source_time_budget_is_exhausted(
     assert fetched_urls == [
         "https://example.gov.in",
     ]
+
+def test_fetch_page_uses_bounded_connect_and_read_timeout(
+    monkeypatch,
+):
+    scraper = ScraperSearch()
+
+    captured_timeout = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {
+            "Content-Type": "text/html",
+        }
+        text = "<html><body>Tender page</body></html>"
+
+    def fake_get(
+        url,
+        headers,
+        timeout,
+        allow_redirects,
+    ):
+        captured_timeout.append(
+            timeout
+        )
+
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "core.services.scraper_search.requests.get",
+        fake_get,
+    )
+
+    url = "https://example.gov.in/tenders"
+
+    result = scraper._fetch_page(
+        url
+    )
+
+    assert result == FakeResponse.text
+    assert captured_timeout == [
+        (
+            scraper.REQUEST_TIMEOUT,
+            scraper.REQUEST_TIMEOUT,
+        ),
+    ]

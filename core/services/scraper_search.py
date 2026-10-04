@@ -805,7 +805,7 @@ class ScraperSearch:
             response = requests.get(
                 url,
                 headers=self.HEADERS,
-                timeout=self.REQUEST_TIMEOUT,
+                timeout=(self.REQUEST_TIMEOUT, self.REQUEST_TIMEOUT),
                 allow_redirects=True,
             )
 
