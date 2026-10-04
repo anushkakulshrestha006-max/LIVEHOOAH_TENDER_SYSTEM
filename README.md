@@ -2,7 +2,7 @@
 
 Automated tender discovery, extraction, qualification, deduplication, and Google Sheets storage pipeline for Livehooah Technology Pvt Ltd.
 
-The current handoff focuses on backend correctness, reproducible operation, and data quality. Dashboard and analytics work is outside the current backend handoff scope.
+The current handoff covers backend correctness, reproducible operation, data quality, and the completed read-only Streamlit dashboard with Analytics v1.
 
 ## Current Status
 
@@ -39,6 +39,8 @@ main.py
 -> Google Sheets
 
 The production entry point is main.py.
+
+The Streamlit dashboard is dashboard/app.py and provides opportunity exploration, daily-run audit visibility, data-quality metrics, and Analytics v1.
 
 The repository currently does not contain its own production scheduler. Recurring execution must be provided externally by the deployment environment.
 
@@ -220,6 +222,7 @@ For an existing working installation, do not recreate the virtual environment un
 Python 3.9 is end-of-life. Some current Google authentication dependencies therefore emit compatibility warnings. A future Python upgrade should be performed as a controlled maintenance change and followed by the complete deterministic regression suite.
 
 The currently validated dependency versions are recorded in requirements.txt.
+Streamlit is declared as a runtime dependency for the dashboard.
 
 ## Running the Production Entry Point
 
@@ -275,7 +278,7 @@ Python 3.9.6 is the currently validated interpreter but is end-of-life.
 
 The repository does not currently provide its own production scheduler.
 
-The current backend handoff does not include a completed dashboard or analytics layer.
+The dashboard and Analytics v1 are completed as a read-only presentation layer over the stored opportunity and activity-log data.
 
 Manual integration scripts may depend on external services and should not be treated as deterministic regression tests.
 
@@ -299,4 +302,4 @@ The current backend handoff prioritizes:
 
 Stable components should not be redesigned without a demonstrated defect and an appropriate regression test.
 
-Dashboard and analytics development, broader deployment automation, and a controlled Python-version upgrade can be handled as later work.
+Broader deployment automation and a controlled Python-version upgrade can be handled as later work.
