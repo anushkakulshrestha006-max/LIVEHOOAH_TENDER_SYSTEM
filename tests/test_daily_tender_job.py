@@ -124,3 +124,71 @@ def test_daily_job_rejects_invalid_serp_limit(
         daily_tender_job.run_daily_tender_job()
 
     assert pipeline_called is False
+
+def test_daily_job_logs_audit_when_no_opportunities_are_saved(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "SERP_DAILY_REQUEST_LIMIT",
+        "12",
+    )
+
+    activity_calls = []
+
+    class FakeSheetsClient:
+        def log_activity(
+            self,
+            agent,
+            action,
+            records_added,
+            notes="",
+        ):
+            activity_calls.append(
+                {
+                    "agent": agent,
+                    "action": action,
+                    "records_added": records_added,
+                    "notes": notes,
+                }
+            )
+
+    def fake_run_livehooah_pipeline(
+        search_budget=None,
+    ):
+        return {
+            "meta": {
+                "total_queries": 55,
+                "total_found": 0,
+                "total_saved": 0,
+                "total_duplicates": 0,
+                "total_failed": 16,
+            },
+            "opportunities": [],
+        }
+
+    monkeypatch.setattr(
+        daily_tender_job,
+        "run_livehooah_pipeline",
+        fake_run_livehooah_pipeline,
+    )
+    monkeypatch.setattr(
+        daily_tender_job,
+        "SheetsClient",
+        FakeSheetsClient,
+        raising=False,
+    )
+
+    daily_tender_job.run_daily_tender_job()
+
+    assert activity_calls == [
+        {
+            "agent": "SYSTEM",
+            "action": "DAILY_RUN",
+            "records_added": 0,
+            "notes": (
+                "Queries=55 | Qualified=0 | Saved=0 | "
+                "Duplicates=0 | Failed=16 | "
+                "Reason=No qualified opportunities; pipeline failures=16"
+            ),
+        }
+    ]
