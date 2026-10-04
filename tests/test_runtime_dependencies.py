@@ -24,3 +24,9 @@ def test_reachable_serp_dependencies_are_declared():
 
     assert "python-dotenv" in declared
     assert "google-search-results" in declared
+
+
+def test_dashboard_runtime_dependency_is_declared():
+    declared = _declared_packages()
+
+    assert "streamlit" in declared
