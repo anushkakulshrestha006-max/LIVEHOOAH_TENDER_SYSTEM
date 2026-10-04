@@ -11,7 +11,7 @@ The backend pipeline is covered by a deterministic pytest suite.
 Current validated baseline:
 
 - Python version: 3.9.6
-- Deterministic tests: 163 passing
+- Deterministic tests: 208 passing
 - Known dependency/runtime warnings: 7
 - Configured base discovery queries: 50
 - Deterministic tests do not require live SERP or Google Sheets access
@@ -172,7 +172,7 @@ Unexpected failures outside these protected operational boundaries may propagate
 
 ## Automated Testing
 
-The deterministic pytest suite currently has a validated baseline of 163 passing tests and 7 known warnings.
+The deterministic pytest suite currently has a validated baseline of 208 passing tests and 7 known warnings.
 
 The warnings currently include Python 3.9 end-of-life warnings from Google authentication dependencies and SWIG-related deprecation warnings.
 
