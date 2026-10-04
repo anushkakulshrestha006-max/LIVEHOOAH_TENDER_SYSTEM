@@ -97,6 +97,7 @@ REAL_OPPORTUNITY_TERMS = [
 # --------------------------------------------------------------------------
 
 LIVEHOOAH_OPPORTUNITY_TERMS = [
+    "consultancy services",
     "structural consultant",
     "structural consultancy",
     "structural engineering consultancy",

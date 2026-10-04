@@ -69,6 +69,39 @@ def test_strong_structural_consultancy_positive_score():
 
 
 # ==============================================================================
+
+
+def test_consultancy_services_is_a_strong_service_signal():
+    """
+    A genuine structural consultancy tender using the natural wording
+    "Consultancy Services" must receive the strong LiveHooah consultancy
+    service signal rather than "Weak consultancy relevance".
+    """
+    opportunity = {
+        "title": (
+            "Consultancy Services for outsourcing Structural Designs "
+            "and Preparation of detailed estimate"
+        ),
+        "description": (
+            "Consultancy Services for outsourcing Structural Designs "
+            "and Preparation of detailed estimate for building/structure"
+        ),
+        "organization": "Chief Engineer (Naval Works) Kochi",
+        "location": "Kochi",
+        "deadline": "",
+        "source_url": (
+            "https://fulfilment.gem.gov.in/contract/slafds"
+            "?fileDownloadPath=SLA_UPLOAD_PATH/2026/Jul/"
+            "GEM_2026_B_7837583/CLM0014/"
+            "NIT_700f79ed-a60c-4149-b5481785129803731_acekochi.pdf"
+        ),
+    }
+
+    score, reasons = compute_livehooah_score(opportunity)
+
+    assert any("Relevant consultancy service" in reason for reason in reasons)
+    assert not any("Weak consultancy relevance" in reason for reason in reasons)
+
 # 2. BLOCKED INFRASTRUCTURE KEYWORD HARD REJECTION
 # ==============================================================================
 
