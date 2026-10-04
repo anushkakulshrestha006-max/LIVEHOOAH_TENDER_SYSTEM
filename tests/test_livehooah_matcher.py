@@ -667,3 +667,39 @@ def test_structural_consultancy_with_expressway_context_is_soft_penalized():
         "Blocked keyword: expressway" in reason
         for reason in reasons
     )
+
+def test_plural_structural_designs_matches_core_structural_design():
+    """
+    Regression test for a real discovered tender using the natural plural
+    wording "Structural Designs".
+
+    "Structural Designs" must receive the existing core structural-design
+    capability signal rather than falling through to secondary relevance.
+    """
+    opportunity = {
+        "title": (
+            "Consultancy Services for outsourcing Structural Designs "
+            "and Preparation of detailed estimate"
+        ),
+        "description": (
+            "Consultancy Services for outsourcing Structural Designs "
+            "and Preparation of detailed estimate for building/structure"
+        ),
+        "organization": "Chief Engineer (Naval Works) Kochi",
+        "location": "Kochi",
+        "deadline": "",
+        "source_url": (
+            "https://fulfilment.gem.gov.in/contract/slafds"
+            "?fileDownloadPath=SLA_UPLOAD_PATH/2026/Jul/"
+            "GEM_2026_B_7837583/CLM0014/"
+            "NIT_700f79ed-a60c-4149-b5481785129803731_acekochi.pdf"
+        ),
+    }
+
+    score, reasons = compute_livehooah_score(opportunity)
+
+    assert any("core capability matches" in reason for reason in reasons)
+    assert not any(
+        "Weak structural relevance (secondary fallback)" in reason
+        for reason in reasons
+    )

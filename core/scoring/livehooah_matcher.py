@@ -24,6 +24,7 @@ LIVEHOOAH_CORE = {
     "structural engineering": 0.20,
     "structural consultancy": 0.25,
     "structural design": 0.20,
+    "structural designs": 0.20,
     "structural analysis": 0.18,
     "proof checking": 0.22,
     "peer review": 0.18,
