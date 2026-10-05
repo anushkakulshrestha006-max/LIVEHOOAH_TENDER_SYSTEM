@@ -44,3 +44,41 @@ def test_sheets_client_uses_project_relative_settings_path(
 
     assert client.sheet is fake_sheet
     assert client._opportunities_cache is None
+
+
+def test_sheets_client_uses_streamlit_secret_credentials():
+    fake_service_account = {
+        "type": "service_account",
+        "project_id": "test-project",
+        "private_key": "test-private-key",
+        "client_email": "test@example.com",
+    }
+
+    fake_creds = object()
+    fake_gspread_client = Mock()
+    fake_sheet = object()
+    fake_gspread_client.open.return_value = fake_sheet
+
+    fake_streamlit = Mock()
+    fake_streamlit.secrets = {
+        "gcp_service_account": fake_service_account,
+    }
+
+    with patch.dict(
+        "sys.modules",
+        {"streamlit": fake_streamlit},
+    ), patch(
+        "sheets.sheets_client."
+        "Credentials.from_service_account_info",
+        return_value=fake_creds,
+    ) as mock_credentials, patch(
+        "sheets.sheets_client.gspread.authorize",
+        return_value=fake_gspread_client,
+    ):
+
+        client = SheetsClient()
+
+    mock_credentials.assert_called_once_with(
+        fake_service_account,
+        scopes=client.scopes,
+    )

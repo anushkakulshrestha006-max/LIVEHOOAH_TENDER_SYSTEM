@@ -53,6 +53,25 @@ def clean_text(value):
     return unicodedata.normalize("NFKC", fixed)
 
 
+def load_service_account_credentials(scopes):
+    try:
+        import streamlit as st
+        service_account = st.secrets.get("gcp_service_account")
+    except Exception:
+        service_account = None
+
+    if service_account:
+        return Credentials.from_service_account_info(
+            dict(service_account),
+            scopes=scopes,
+        )
+
+    return Credentials.from_service_account_file(
+        str(SERVICE_ACCOUNT_FILE),
+        scopes=scopes,
+    )
+
+
 class SheetsClient:
 
     def __init__(self):
@@ -61,9 +80,8 @@ class SheetsClient:
             "https://www.googleapis.com/auth/drive"
         ]
 
-        self.creds = Credentials.from_service_account_file(
-            str(SERVICE_ACCOUNT_FILE),
-            scopes=self.scopes
+        self.creds = load_service_account_credentials(
+            self.scopes
         )
 
         self.client = gspread.authorize(self.creds)
