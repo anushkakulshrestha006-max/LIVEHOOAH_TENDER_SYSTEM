@@ -43,6 +43,7 @@ st.markdown(
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
     :root {
+        color-scheme: light !important;
         --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         --font-mono: 'JetBrains Mono', monospace;
         --bg-page: #f8fafc;
@@ -219,7 +220,7 @@ st.markdown(
     }
 
     div[data-testid="stMetricLabel"] {
-        color: var(--text-muted);
+        color: #64748b !important;
         font-size: 0.72rem;
         font-weight: 600;
         letter-spacing: 0.06em;
@@ -228,7 +229,7 @@ st.markdown(
     }
 
     div[data-testid="stMetricValue"] {
-        color: var(--text-primary);
+        color: #0f172a !important;
         font-size: 1.85rem;
         font-weight: 700;
         font-variant-numeric: tabular-nums;
