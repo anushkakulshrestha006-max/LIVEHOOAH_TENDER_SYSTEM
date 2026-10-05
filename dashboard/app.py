@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from dashboard.dashboard_data import (
+from dashboard_data import (
     build_dashboard_metrics,
     build_data_quality_metrics,
     build_daily_run_audit,
