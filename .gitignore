@@ -1,4 +1,4 @@
-﻿venv/
+venv/
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -15,6 +15,8 @@ temp_*.py
 temp_*.pdf
 project_tree.txt
 
-# Local recovery backups
+# Local recovery backups and binary artifacts
 core/services/tender_parser.py.bak_title_fix
 restore_organization.py
+*.zip
+RFP.pdf
